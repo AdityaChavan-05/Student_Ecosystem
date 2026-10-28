@@ -3,7 +3,7 @@ from functools import lru_cache
 
 from google import genai
 
-MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 
 @lru_cache(maxsize=1)
 def get_gemini_client():
