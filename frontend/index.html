@@ -1,0 +1,170 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Your personalized student dashboard for engineering news and college updates.">
+    <title>Student Ecosystem | Your Student Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header class="site-header">
+        <div class="container header-content">
+            <a href="/" class="brand">
+                <span class="brand-icon">SE</span>
+                <span>
+                    <strong>Student Ecosystem</strong>
+                    <small>Your campus. Your world.</small>
+                </span>
+            </a>
+
+            <nav class="main-nav" aria-label="Main navigation">
+                <a href="/" class="nav-link active">Dashboard</a>
+                <a href="/news" class="nav-link">Engineering News</a>
+                <a href="/college" class="nav-link">College Updates</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container dashboard">
+        <section class="welcome-section">
+            <div class="welcome-copy">
+                <span class="eyebrow">YOUR PERSONAL STUDENT HUB</span>
+                <h1>Stay curious.<br><span>Stay ahead.</span></h1>
+                <p>
+                    Discover engineering news, explore new opportunities,
+                    and keep up with important college updates—all in one place.
+                </p>
+                <a href="#engineering-news" class="button button-primary">
+                    Explore today's news <span aria-hidden="true">→</span>
+                </a>
+            </div>
+
+            <div class="welcome-card">
+                <div class="welcome-card-top">
+                    <span class="status-dot"></span>
+                    <span>YOUR DAILY BRIEFING</span>
+                </div>
+                <div class="welcome-illustration" aria-hidden="true">✦</div>
+                <h2>A smarter way to stay informed.</h2>
+                <p>Relevant updates, simplified with AI, so you can focus on what matters.</p>
+                <div class="welcome-card-footer">
+                    <span>NEWS</span>
+                    <span>·</span>
+                    <span>LEARNING</span>
+                    <span>·</span>
+                    <span>CAMPUS</span>
+                </div>
+            </div>
+        </section>
+
+        <section class="quick-stats" aria-label="Platform features">
+            <article class="stat-card">
+                <span class="stat-icon">◎</span>
+                <div>
+                    <h3>Branch-focused</h3>
+                    <p>News related to your field</p>
+                </div>
+            </article>
+
+            <article class="stat-card">
+                <span class="stat-icon">✧</span>
+                <div>
+                    <h3>AI summaries</h3>
+                    <p>Understand news faster</p>
+                </div>
+            </article>
+
+            <article class="stat-card">
+                <span class="stat-icon">▤</span>
+                <div>
+                    <h3>Campus updates</h3>
+                    <p>Notices, events and exams</p>
+                </div>
+            </article>
+        </section>
+
+        <section class="content-section" id="engineering-news">
+            <div class="section-heading">
+                <div>
+                    <span class="eyebrow">CURATED FOR YOU</span>
+                    <h2>Engineering news</h2>
+                    <p>Discover what's happening in technology and engineering.</p>
+                </div>
+                <a href="/news" class="text-link">View all news <span aria-hidden="true">→</span></a>
+            </div>
+
+            <div class="filter-panel">
+                <div class="filter-field">
+                    <label for="branch-select">Your engineering branch</label>
+                    <select id="branch-select">
+                        <option value="Artificial Intelligence">Artificial Intelligence</option>
+                        <option value="Computer Science">Computer Science</option>
+                        <option value="Electronics">Electronics</option>
+                        <option value="Mechanical">Mechanical</option>
+                        <option value="Civil">Civil</option>
+                        <option value="Electrical">Electrical</option>
+                    </select>
+                </div>
+
+                <button id="refresh-news" class="button button-secondary" type="button">
+                    <span aria-hidden="true">↻</span> Refresh news
+                </button>
+            </div>
+
+            <div id="news-status" class="status-message" role="status" aria-live="polite">
+                Choose your branch and load the latest news.
+            </div>
+
+            <div id="news-container" class="news-grid">
+                <article class="news-placeholder">
+                    <div class="placeholder-icon">✦</div>
+                    <h3>Your daily briefing starts here</h3>
+                    <p>Loading relevant engineering news will display articles and AI summaries here.</p>
+                </article>
+            </div>
+        </section>
+
+        <section class="content-section college-preview">
+            <div class="section-heading">
+                <div>
+                    <span class="eyebrow">YOUR CAMPUS, CONNECTED</span>
+                    <h2>College updates</h2>
+                    <p>Keep track of important notices, events and academic announcements.</p>
+                </div>
+                <a href="/college" class="text-link">Explore updates <span aria-hidden="true">→</span></a>
+            </div>
+
+            <div class="college-preview-card">
+                <div class="preview-icon" aria-hidden="true">⌂</div>
+                <div class="preview-copy">
+                    <h3>Your college updates, in one place</h3>
+                    <p>Official college updates will appear here once the college portal is configured.</p>
+                </div>
+                <a href="/college" class="button button-secondary">View college updates</a>
+            </div>
+        </section>
+
+        <section class="bottom-banner">
+            <div>
+                <span class="eyebrow">BUILT FOR ENGINEERING STUDENTS</span>
+                <h2>Less searching. More learning.</h2>
+                <p>Make your time as a student more informed, organized and productive.</p>
+            </div>
+            <span class="banner-symbol" aria-hidden="true">↗</span>
+        </section>
+    </main>
+
+    <footer class="site-footer">
+        <div class="container footer-content">
+            <a href="/" class="footer-brand">Student Ecosystem</a>
+            <p>Built to make student life a little smarter.</p>
+            <span>© <span id="current-year">2026</span> Student Ecosystem</span>
+        </div>
+    </footer>
+
+    <script src="/static/script.js" defer></script>
+</body>
+</html>
+```
