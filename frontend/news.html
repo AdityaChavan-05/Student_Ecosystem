@@ -1,0 +1,112 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Explore engineering news tailored to your branch, with concise AI-powered summaries.">
+    <title>Engineering News | Student Ecosystem</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header class="site-header">
+        <div class="container header-content">
+            <a href="/" class="brand">
+                <span class="brand-icon">SE</span>
+                <span>
+                    <strong>Student Ecosystem</strong>
+                    <small>Your campus. Your world.</small>
+                </span>
+            </a>
+
+            <nav class="main-nav" aria-label="Main navigation">
+                <a href="/" class="nav-link">Dashboard</a>
+                <a href="/news" class="nav-link active">Engineering News</a>
+                <a href="/college" class="nav-link">College Updates</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container page-content">
+        <section class="page-hero">
+            <span class="eyebrow">THE WORLD OF ENGINEERING, SIMPLIFIED</span>
+            <h1>Your daily dose of <span>what's new.</span></h1>
+            <p>
+                Discover technology breakthroughs, engineering research,
+                internships and innovations relevant to your field.
+                Let AI simplify the important details.
+            </p>
+        </section>
+
+        <section class="news-controls">
+            <div class="filter-field">
+                <label for="branch-select">Select your branch</label>
+                <select id="branch-select">
+                    <option value="Artificial Intelligence">Artificial Intelligence</option>
+                    <option value="Computer Science">Computer Science</option>
+                    <option value="Electronics">Electronics</option>
+                    <option value="Mechanical">Mechanical</option>
+                    <option value="Civil">Civil</option>
+                    <option value="Electrical">Electrical</option>
+                </select>
+            </div>
+
+            <button id="refresh-news" class="button button-primary" type="button">
+                <span aria-hidden="true">↻</span> Get latest news
+            </button>
+        </section>
+
+        <section class="news-results-section">
+            <div class="section-heading">
+                <div>
+                    <span class="eyebrow">YOUR PERSONALIZED BRIEFING</span>
+                    <h2>Latest engineering stories</h2>
+                    <p>Concise summaries to help you stay informed without the noise.</p>
+                </div>
+                <span class="result-badge" id="news-count">Ready to load</span>
+            </div>
+
+            <div id="news-status" class="status-message" role="status" aria-live="polite">
+                Select your branch and load the latest news.
+            </div>
+
+            <div id="news-container" class="news-grid">
+                <article class="news-placeholder">
+                    <div class="placeholder-icon">✦</div>
+                    <h3>Your news briefing is waiting</h3>
+                    <p>
+                        Engineering articles and their AI-generated summaries
+                        will appear here when you load the news.
+                    </p>
+                </article>
+            </div>
+        </section>
+
+        <section class="ai-explainer">
+            <div class="ai-explainer-icon" aria-hidden="true">✧</div>
+            <div>
+                <span class="eyebrow">POWERED BY AI</span>
+                <h2>Understand more in less time.</h2>
+                <p>
+                    Each available article can be summarized into three concise
+                    bullet points, helping you understand the key ideas quickly.
+                    Visit the original source for the complete story and context.
+                </p>
+            </div>
+        </section>
+
+        <a href="/" class="back-link">← Back to dashboard</a>
+    </main>
+
+    <footer class="site-footer">
+        <div class="container footer-content">
+            <a href="/" class="footer-brand">Student Ecosystem</a>
+            <p>Built to make student life a little smarter.</p>
+            <span>© <span id="current-year">2026</span> Student Ecosystem</span>
+        </div>
+    </footer>
+
+    <script src="/static/script.js" defer></script>
+</body>
+</html>
+```
