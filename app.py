@@ -20,14 +20,11 @@ from news_fetcher import get_news
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(**name**)
 
-BASE_DIR = os.path.dirname(os.path.abspath(**file**))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
+PUBLIC_DIR = os.path.join(BASE_DIR, "public")
 
-app = Flask(
-**name**,
-static_folder=FRONTEND_DIR,
-static_url_path="/static",
-)
+app = Flask(__name__)
 
 app.config.from_object(Config)
 
@@ -51,10 +48,16 @@ return max(1, value)
 except (TypeError, ValueError):
 return default
 
-@app.route("/")
-def home():
-"""Serve the main website homepage."""
-return send_from_directory(FRONTEND_DIR, "index.html")
+@app.route("/style.css")
+def public_stylesheet():
+    """Serve the stylesheet during local development."""
+    return send_from_directory(PUBLIC_DIR, "style.css")
+
+
+@app.route("/script.js")
+def public_script():
+    """Serve the JavaScript during local development."""
+    return send_from_directory(PUBLIC_DIR, "script.js")
 
 @app.route("/news")
 def news_page():
