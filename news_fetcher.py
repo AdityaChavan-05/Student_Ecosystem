@@ -6,7 +6,7 @@ import requests
 
 from urllib.parse import urlparse
 
-logger = logging.getLogger(**name**)
+logger = logging.getLogger(__name__)
 
 GOOGLE_NEWS_RSS_URL = "https://news.google.com/rss/search"
 
@@ -17,7 +17,6 @@ MAX_LIMIT = 10
 def _format_publication_date(entry):
 """Convert an RSS publication date into a UTC ISO timestamp."""
 
-```
 published = entry.get("published_parsed")
 
 if not published:
@@ -30,12 +29,10 @@ return time.strftime(
     "%Y-%m-%dT%H:%M:%SZ",
     time.gmtime(published),
 )
-```
 
 def _get_source(entry):
 """Extract the publisher name from an RSS entry."""
 
-```
 source = entry.get("source", {})
 
 if isinstance(source, dict):
@@ -51,7 +48,6 @@ if hostname:
     return hostname.removeprefix("www.")
 
 return "Unknown source"
-```
 
 def get_news(categories, limit=DEFAULT_LIMIT):
 """
@@ -155,4 +151,3 @@ for entry in feed.entries:
         break
 
 return articles
-```
