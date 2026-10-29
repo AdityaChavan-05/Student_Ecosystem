@@ -5,6 +5,7 @@ from google import genai
 
 MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 
+
 @lru_cache(maxsize=1)
 def get_gemini_client():
     """
@@ -14,44 +15,38 @@ def get_gemini_client():
     environment variable.
     """
     api_key = os.getenv("AI_API_KEY", "").strip()
-api_key = os.getenv("AI_API_KEY", "").strip()
 
-if not api_key:
-    return None
+    if not api_key:
+        return None
 
-return genai.Client(api_key=api_key)
-```
+    return genai.Client(api_key=api_key)
+
 
 def summarize_news(text: str) -> str:
-"""
-Summarize a news article or college notice into three
-concise, student-friendly bullet points.
-"""
-if not text or not text.strip():
-return "Summary unavailable: no article text was provided."
+    """
+    Summarize a news article or college notice into three
+    concise, student-friendly bullet points.
+    """
+    if not text or not text.strip():
+        return "Summary unavailable: no article text was provided."
 
-```
-client = get_gemini_client()
+    client = get_gemini_client()
 
-if client is None:
-    return (
-        "AI summary unavailable. Please configure the "
-        "AI_API_KEY environment variable."
-    )
+    if client is None:
+        return (
+            "AI summary unavailable. Please configure the "
+            "AI_API_KEY environment variable."
+        )
 
-# Keep the input manageable and avoid sending excessive text.
-article_text = text.strip()[:12000]
+    article_text = text.strip()[:12000]
 
-prompt = f"""
-```
-
+    prompt = f"""
 You are the AI summarizer for Student Ecosystem,
 a platform built for college students.
 
 Summarize the following news article or college notice.
 
 Rules:
-
 1. Write exactly three concise bullet points.
 2. Use simple, clear English suitable for engineering students.
 3. Highlight the most important facts and developments.
@@ -65,24 +60,21 @@ SOURCE TEXT:
 {article_text}
 """
 
-```
-try:
-    response = client.models.generate_content(
-        model=MODEL_NAME,
-        contents=prompt,
-    )
+    try:
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=prompt,
+        )
 
-    summary = (response.text or "").strip()
+        summary = (response.text or "").strip()
 
-    if not summary:
-        return "AI summary unavailable: the model returned no text."
+        if not summary:
+            return "AI summary unavailable: the model returned no text."
 
-    return summary
+        return summary
 
-except Exception:
-    # Do not expose API keys or internal error details to users.
-    return (
-        "AI summary temporarily unavailable. "
-        "Please try again later."
-    )
-```
+    except Exception:
+        return (
+            "AI summary temporarily unavailable. "
+            "Please try again later."
+        )
