@@ -7,7 +7,7 @@ from urllib.parse import urljoin, urlparse
 import requests
 from bs4 import BeautifulSoup
 
-logger = logging.getLogger(**name**)
+logger = logging.getLogger(__name__)
 
 REQUEST_TIMEOUT = 12
 DEFAULT_LIMIT = 10
