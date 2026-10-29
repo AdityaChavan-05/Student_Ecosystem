@@ -7,13 +7,13 @@ MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 
 @lru_cache(maxsize=1)
 def get_gemini_client():
-"""
-Create and reuse the Gemini client.
+    """
+    Create and reuse the Gemini client.
 
-```
-The API key must be configured as the AI_API_KEY
-environment variable.
-"""
+    The API key must be configured as the AI_API_KEY
+    environment variable.
+    """
+    api_key = os.getenv("AI_API_KEY", "").strip()
 api_key = os.getenv("AI_API_KEY", "").strip()
 
 if not api_key:
