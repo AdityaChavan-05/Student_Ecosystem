@@ -1,4 +1,3 @@
-```python
 import logging
 import os
 
@@ -139,4 +138,3 @@ def is_database_configured():
         os.getenv("SUPABASE_URL", "").strip()
         and os.getenv("SUPABASE_KEY", "").strip()
     )
-```
