@@ -1,30 +1,39 @@
 import os
-from dotenv import load_dotenv
 
-# Load private configuration from the local .env file
-
-load_dotenv()
 
 class Config:
-"""Central configuration for the Student Ecosystem application."""
+    """Central configuration for the Student Ecosystem application."""
 
-```
-# Flask settings
-SECRET_KEY = os.getenv("SECRET_KEY", "development-key-change-me")
-DEBUG = os.getenv("FLASK_DEBUG", "false").lower() == "true"
+    SECRET_KEY = os.getenv(
+        "SECRET_KEY",
+        "development-only-change-this-key"
+    )
 
-# Google Gemini AI
-GEMINI_API_KEY = os.getenv("AI_API_KEY", "")
+    AI_API_KEY = os.getenv("AI_API_KEY", "").strip()
 
-# Supabase database
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+    GEMINI_MODEL = os.getenv(
+        "GEMINI_MODEL",
+        "gemini-3.8-flash"
+    )
 
-# News settings
-DEFAULT_NEWS_LIMIT = 8
-MAX_NEWS_LIMIT = 10
-NEWS_CACHE_MINUTES = 30
+    COLLEGE_WEBSITE_URL = os.getenv(
+        "COLLEGE_WEBSITE_URL",
+        ""
+    ).strip()
 
-# College updates settings
-COLLEGE_CACHE_MINUTES = 15
-```
+    FLASK_DEBUG = (
+        os.getenv("FLASK_DEBUG", "false").lower()
+        == "true"
+    )
+
+    SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
+
+    SUPABASE_KEY = os.getenv("SUPABASE_KEY", "").strip()
+
+    NEWS_CACHE_MINUTES = int(
+        os.getenv("NEWS_CACHE_MINUTES", "30")
+    )
+
+    REQUEST_TIMEOUT = int(
+        os.getenv("REQUEST_TIMEOUT", "15")
+    )
