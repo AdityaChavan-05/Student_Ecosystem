@@ -59,7 +59,6 @@ BRANCH_MAPPINGS = {
     "smart grids",
     "electrical machines",
 ],
-```
 
 }
 
@@ -81,11 +80,9 @@ def get_branch_topics(branch: str):
 """
 Return topics for a selected branch.
 
-```
 Return an empty list if the branch is not recognized.
 """
 if not isinstance(branch, str):
     return []
 
 return BRANCH_MAPPINGS.get(branch.strip(), []).copy()
-```
