@@ -15,7 +15,6 @@ BRANCH_MAPPINGS = {
 "software engineering",
 ],
 
-```
 "Artificial Intelligence": [
     "artificial intelligence",
     "machine learning",
