@@ -1,153 +1,154 @@
 import logging
 import time
+from datetime import datetime, timezone
+from urllib.parse import quote
 
 import feedparser
 import requests
 
-from urllib.parse import urlparse
+from categories import BRANCH_MAPPINGS, GENERAL_CATEGORIES
+
 
 logger = logging.getLogger(__name__)
 
-GOOGLE_NEWS_RSS_URL = "https://news.google.com/rss/search"
+REQUEST_TIMEOUT = 15
+DEFAULT_LIMIT = 10
 
-REQUEST_TIMEOUT = 12
-DEFAULT_LIMIT = 8
-MAX_LIMIT = 10
-
-def _format_publication_date(entry):
-"""Convert an RSS publication date into a UTC ISO timestamp."""
-
-published = entry.get("published_parsed")
-
-if not published:
-    published = entry.get("updated_parsed")
-
-if not published:
-    return None
-
-return time.strftime(
-    "%Y-%m-%dT%H:%M:%SZ",
-    time.gmtime(published),
+RSS_URL = (
+    "https://news.google.com/rss/search"
+    "?q={query}&hl=en-IN&gl=IN&ceid=IN:en"
 )
 
-def _get_source(entry):
-"""Extract the publisher name from an RSS entry."""
-
-source = entry.get("source", {})
-
-if isinstance(source, dict):
-    source_name = source.get("title")
-    if source_name:
-        return source_name
-
-# Some feeds include the publisher in the article URL.
-link = entry.get("link", "")
-hostname = urlparse(link).hostname
-
-if hostname:
-    return hostname.removeprefix("www.")
-
-return "Unknown source"
-
-def get_news(categories, limit=DEFAULT_LIMIT):
-"""
-Fetch news articles for a list of engineering topics.
-
-```
-Args:
-    categories: A list of search topics or a single topic string.
-    limit: Maximum number of articles to return.
-
-Returns:
-    A list of dictionaries containing article information.
-"""
-
-if isinstance(categories, str):
-    categories = [categories]
-
-if not categories:
-    return []
-
-# Remove empty topics and duplicate search terms.
-topics = list(
-    dict.fromkeys(
-        topic.strip()
-        for topic in categories
-        if isinstance(topic, str) and topic.strip()
-    )
+_session = requests.Session()
+_session.headers.update(
+    {
+        "User-Agent": (
+            "Mozilla/5.0 (compatible; StudentEcosystem/1.0)"
+        )
+    }
 )
 
-if not topics:
-    return []
 
-try:
-    limit = int(limit)
-except (TypeError, ValueError):
-    limit = DEFAULT_LIMIT
+def _parse_published_date(date_string):
+    """Convert an RSS publication date into a UTC ISO timestamp."""
+    if not date_string:
+        return None
 
-limit = max(1, min(limit, MAX_LIMIT))
+    try:
+        parsed = feedparser._parse_date(date_string)
 
-# Combine related topics into one Google News search.
-query = " OR ".join(f'"{topic}"' for topic in topics)
+        if not parsed:
+            return None
 
-params = {
-    "q": query,
-    "hl": "en-IN",
-    "gl": "IN",
-    "ceid": "IN:en",
-}
+        published = datetime(*parsed[:6], tzinfo=timezone.utc)
+        return published.isoformat()
 
-headers = {
-    "User-Agent": (
-        "StudentEcosystem/1.0 "
-        "(student engineering news reader)"
-    )
-}
+    except (TypeError, ValueError, OverflowError):
+        return None
 
-try:
-    response = requests.get(
-        GOOGLE_NEWS_RSS_URL,
-        params=params,
-        headers=headers,
-        timeout=REQUEST_TIMEOUT,
-    )
 
-    response.raise_for_status()
+def _fetch_rss_articles(query, limit=DEFAULT_LIMIT):
+    """Fetch articles matching a search query from Google News RSS."""
+    encoded_query = quote(query)
+    url = RSS_URL.format(query=encoded_query)
 
-    feed = feedparser.parse(response.content)
+    try:
+        response = _session.get(
+            url,
+            timeout=REQUEST_TIMEOUT,
+        )
+        response.raise_for_status()
 
-except requests.RequestException:
-    logger.warning("Could not retrieve the Google News RSS feed.")
-    return []
+        feed = feedparser.parse(response.content)
 
-if feed.bozo and not feed.entries:
-    logger.warning("The Google News RSS feed could not be parsed.")
-    return []
+        articles = []
 
-articles = []
-seen_links = set()
+        for entry in feed.entries[:limit]:
+            title = entry.get("title", "").strip()
+            link = entry.get("link", "").strip()
 
-for entry in feed.entries:
-    title = entry.get("title", "").strip()
-    link = entry.get("link", "").strip()
+            if not title or not link:
+                continue
 
-    # Skip incomplete entries and duplicate articles.
-    if not title or not link or link in seen_links:
-        continue
+            source_info = entry.get("source", {})
+            source_name = source_info.get("title", "")
 
-    seen_links.add(link)
+            articles.append(
+                {
+                    "title": title,
+                    "link": link,
+                    "url": link,
+                    "source": source_name or "Google News",
+                    "description": entry.get(
+                        "summary", ""
+                    ),
+                    "published_at": _parse_published_date(
+                        entry.get("published", "")
+                    ),
+                    "category": query,
+                }
+            )
 
-    articles.append(
-        {
-            "title": title,
-            "link": link,
-            "source": _get_source(entry),
-            "description": entry.get("summary", ""),
-            "published_at": _format_publication_date(entry),
-        }
-    )
+        return articles
 
-    if len(articles) >= limit:
-        break
+    except (requests.RequestException, ValueError):
+        logger.warning(
+            "Could not retrieve news for the requested query."
+        )
+        return []
 
-return articles
+
+def get_news(branch="Computer Science", limit=DEFAULT_LIMIT):
+    """
+    Retrieve engineering news relevant to the selected branch.
+
+    Returns a list of article dictionaries.
+    """
+    if not isinstance(branch, str):
+        branch = "Computer Science"
+
+    branch = branch.strip()
+
+    if branch not in BRANCH_MAPPINGS:
+        branch = "Computer Science"
+
+    try:
+        limit = max(1, min(int(limit), 30))
+    except (TypeError, ValueError):
+        limit = DEFAULT_LIMIT
+
+    branch_topics = BRANCH_MAPPINGS.get(branch, [])
+    queries = branch_topics + GENERAL_CATEGORIES
+
+    articles = []
+    seen_links = set()
+
+    # Search branch-specific topics first.
+    for query in queries:
+        remaining = limit - len(articles)
+
+        if remaining <= 0:
+            break
+
+        results = _fetch_rss_articles(
+            query,
+            limit=min(remaining, 10),
+        )
+
+        for article in results:
+            link = article.get("link", "")
+
+            if not link or link in seen_links:
+                continue
+
+            seen_links.add(link)
+            article["branch"] = branch
+            articles.append(article)
+
+            if len(articles) >= limit:
+                break
+
+        # Avoid sending too many requests in quick succession.
+        time.sleep(0.2)
+
+    return articles
