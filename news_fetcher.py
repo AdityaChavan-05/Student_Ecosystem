@@ -33,9 +33,8 @@ session.headers.update({
 
 def clean_text(text):
 """Remove HTML tags and clean article descriptions."""
-
-if not text:
-    return ""
+    if not text:
+        return ""
 
 soup = BeautifulSoup(unescape(text), "html.parser")
 return " ".join(soup.get_text(" ", strip=True).split())
