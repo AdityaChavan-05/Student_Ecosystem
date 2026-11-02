@@ -10,7 +10,7 @@ from bs4 import BeautifulSoup
 
 from categories import BRANCH_MAPPINGS, GENERAL_CATEGORIES
 
-logger = logging.getLogger(**name**)
+logger = logging.getLogger(__name__)
 
 REQUEST_TIMEOUT = 10
 DEFAULT_LIMIT = 10
