@@ -33,28 +33,29 @@ session.headers.update({
 
 def clean_text(text):
 """Remove HTML tags and clean article descriptions."""
+
     if not text:
         return ""
-
-soup = BeautifulSoup(unescape(text), "html.parser")
-return " ".join(soup.get_text(" ", strip=True).split())
+    
+    soup = BeautifulSoup(unescape(text), "html.parser")
+    return " ".join(soup.get_text(" ", strip=True).split())
 
 def parse_date(date_string):
 """Convert publication dates into UTC ISO format."""
 
-if not date_string:
-    return None
-
-try:
-    published = parsedate_to_datetime(date_string)
-
-    if published.tzinfo is None:
-        published = published.replace(tzinfo=timezone.utc)
-
-    return published.astimezone(timezone.utc).isoformat()
-
-except (TypeError, ValueError, OverflowError):
-    return None
+    if not date_string:
+        return None
+    
+    try:
+        published = parsedate_to_datetime(date_string)
+            
+        if published.tzinfo is None:
+                published = published.replace(tzinfo=timezone.utc)
+            
+        return published.astimezone(timezone.utc).isoformat()
+        
+    except (TypeError, ValueError, OverflowError):
+        return None
 
 def fetch_rss(url):
 """Download and parse an RSS feed."""
