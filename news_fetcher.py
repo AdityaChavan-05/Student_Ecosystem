@@ -28,20 +28,16 @@ BING_NEWS_URL = (
 session = requests.Session()
 
 session.headers.update({
-"User-Agent": (
-"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-"AppleWebKit/537.36 Chrome/120.0 Safari/537.36"
-)
+"User-Agent": "Mozilla/5.0 (compatible; StudentEcosystem/1.0)"
 })
 
 def clean_text(text):
 """Remove HTML tags and clean article descriptions."""
 
-    if not text:
-        return ""
+if not text:
+    return ""
 
 soup = BeautifulSoup(unescape(text), "html.parser")
-
 return " ".join(soup.get_text(" ", strip=True).split())
 
 def parse_date(date_string):
@@ -62,21 +58,13 @@ except (TypeError, ValueError, OverflowError):
     return None
 
 def fetch_rss(url):
-"""Download and parse an RSS feed safely."""
+"""Download and parse an RSS feed."""
 
 try:
-    response = session.get(
-        url,
-        timeout=REQUEST_TIMEOUT
-    )
-
+    response = session.get(url, timeout=REQUEST_TIMEOUT)
     response.raise_for_status()
 
     feed = feedparser.parse(response.content)
-
-    if not feed.entries:
-        logger.warning("RSS source returned no articles.")
-        return []
 
     articles = []
 
@@ -91,11 +79,7 @@ try:
         source_info = entry.get("source", {})
         source = source_info.get("title", "")
 
-        description = clean_text(
-            entry.get("summary", "")
-        )
-
-        published = entry.get("published", "")
+        description = clean_text(entry.get("summary", ""))
 
         articles.append({
             "title": title,
@@ -104,7 +88,9 @@ try:
             "source": source or "News Publisher",
             "description": description,
             "content": description,
-            "published_at": parse_date(published),
+            "published_at": parse_date(
+                entry.get("published", "")
+            ),
         })
 
     return articles
@@ -118,21 +104,14 @@ except Exception:
     return []
 
 def get_news(branch="Computer Science", limit=DEFAULT_LIMIT):
-"""
-Fetch branch-specific engineering news.
-
-Google News is the primary source.
-Bing News RSS is the backup source.
-
-Supports either a branch name or a list of topics.
-"""
+"""Fetch engineering news for the selected branch."""
 
 try:
     limit = max(1, min(int(limit), 30))
 except (TypeError, ValueError):
     limit = DEFAULT_LIMIT
 
-# Support both branch names and topic lists.
+# Support branch names and topic lists.
 if isinstance(branch, list):
     branch_name = "Engineering"
     topics = branch
@@ -149,10 +128,11 @@ else:
     branch_name = branch
     topics = BRANCH_MAPPINGS.get(branch, [])
 
-# Add general engineering opportunities.
-topics = list(dict.fromkeys(topics + GENERAL_CATEGORIES))
+# Add general engineering topics.
+topics = list(dict.fromkeys(
+    topics + GENERAL_CATEGORIES
+))
 
-# Construct one combined search instead of many requests.
 search_terms = [
     f'"{topic}"'
     for topic in topics
@@ -163,26 +143,23 @@ if not search_terms:
     return []
 
 query = " OR ".join(search_terms)
-
 encoded_query = quote(query, safe="")
 
-# First attempt: Google News.
+# Primary source: Google News.
 google_url = GOOGLE_NEWS_URL.format(
     query=encoded_query
 )
 
 articles = fetch_rss(google_url)
 
-# Second attempt: Bing News, if Google didn't return enough.
+# Backup source: Bing News.
 if len(articles) < limit:
 
     bing_url = BING_NEWS_URL.format(
         query=encoded_query
     )
 
-    backup_articles = fetch_rss(bing_url)
-
-    articles.extend(backup_articles)
+    articles.extend(fetch_rss(bing_url))
 
 # Remove duplicate articles.
 unique_articles = []
@@ -198,7 +175,6 @@ for article in articles:
     seen_links.add(link)
 
     article["branch"] = branch_name
-
     unique_articles.append(article)
 
     if len(unique_articles) >= limit:
