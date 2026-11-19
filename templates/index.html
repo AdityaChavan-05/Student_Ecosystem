@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="description" content="Student Ecosystem is the daily companion for MIT-WPU students: campus updates, hackathons, AI news briefings, mail summaries, an academic vault and a task hub.">
+  <meta name="theme-color" content="#5b4bff">
+  <title>Student Ecosystem — MIT-WPU</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/app.css?v=3">
+  <script>
+    try {
+      var savedTheme = localStorage.getItem("se-theme");
+      var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+      document.documentElement.setAttribute("data-theme", savedTheme || (prefersDark ? "dark" : "light"));
+    } catch (e) {}
+  </script>
+</head>
+<body>
+  <!-- Icon sprite -->
+  <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9.5 21v-6h5v6"/></symbol>
+    <symbol id="i-campus" viewBox="0 0 24 24"><path d="M3 21h18"/><path d="M5 21V8l7-4 7 4v13"/><path d="M9 21v-5h6v5"/><path d="M9 11h.01M15 11h.01"/></symbol>
+    <symbol id="i-trophy" viewBox="0 0 24 24"><path d="M7 4h10v5a5 5 0 0 1-10 0V4Z"/><path d="M7 6H4v1a3 3 0 0 0 3 3"/><path d="M17 6h3v1a3 3 0 0 1-3 3"/><path d="M12 14v4"/><path d="M8 21h8"/><path d="M9 21v-3h6v3"/></symbol>
+    <symbol id="i-news" viewBox="0 0 24 24"><path d="M4 5h12v14H5a1 1 0 0 1-1-1V5Z"/><path d="M16 8h4v9a2 2 0 0 1-2 2h-2"/><path d="M7 8h6M7 11h6M7 14h4"/></symbol>
+    <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h13v18H6a2 2 0 0 1-2-2V5Z"/><path d="M4 17.5h15"/><path d="M8 7h7"/></symbol>
+    <symbol id="i-tasks" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 1.5 1.5L11 8"/><path d="m7 15 1.5 1.5L11 14"/><path d="M14 9h4M14 15h4"/></symbol>
+    <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M6 4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v17l-6-4-6 4V4Z"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 13.2A8.5 8.5 0 1 1 10.8 3a6.7 6.7 0 0 0 10.2 10.2Z"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 6.3"/><path d="M20 4v7h-7"/></symbol>
+    <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="m20 4-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+    <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3Z"/><path d="m19 15 .8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15Z"/><path d="m5 16 .7 2.3L8 19l-2.3.7L5 22l-.7-2.3L2 19l2.3-.7L5 16Z"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14"/><path d="M10 11v6M14 11v6"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="m4 20 4.5-1 10-10a2.1 2.1 0 0 0-3-3l-10 10L4 20Z"/><path d="m13.5 6.5 4 4"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 5 5L20 6"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 5.5a3.5 3.5 0 0 1 0 7"/><path d="M18 15.5a5.5 5.5 0 0 1 3.5 4.5"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v12"/><path d="m7 11 5 5 5-5"/><path d="M4 19v1h16v-1"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3 2.7 5.6 6.3.9-4.5 4.3 1 6.2-5.5-3-5.5 3 1-6.2L3 9.5l6.3-.9L12 3Z"/></symbol>
+    <symbol id="i-filter" viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4 2v-8L3 5Z"/></symbol>
+    <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+    <symbol id="i-command" viewBox="0 0 24 24"><path d="M9 6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6Z"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/><path d="m3 17 9 5 9-5"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M13 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9l-6-6Z"/><path d="M13 3v6h6"/><path d="M8 14h8M8 17h5"/></symbol>
+    <symbol id="i-video" viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
+    <symbol id="i-tool" viewBox="0 0 24 24"><path d="M14.5 6.5a4 4 0 0 1 5-5l-2.4 2.4 2.5 2.5 2.4-2.4a4 4 0 0 1-5 5L7 19a2.8 2.8 0 1 1-4-4l10-10.5Z"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3 2 21h20L12 3Z"/><path d="M12 9v5M12 17.5h.01"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4 20-7Z"/><path d="M22 2 11 13"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></symbol>
+    <symbol id="i-grad" viewBox="0 0 24 24"><path d="m2 9 10-5 10 5-10 5L2 9Z"/><path d="M6 11.5V17c0 1.7 2.7 3 6 3s6-1.3 6-3v-5.5"/><path d="M22 9v6"/></symbol>
+    <symbol id="i-compass" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m16 8-2.5 5.5L8 16l2.5-5.5L16 8Z"/></symbol>
+    <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M4 13h4l2 3h4l2-3h4"/><path d="M5 4h14l2 9v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6l2-9Z"/></symbol>
+  </svg>
+
+  <div class="ambient" aria-hidden="true">
+    <div class="ambient-orb orb-1"></div>
+    <div class="ambient-orb orb-2"></div>
+    <div class="ambient-orb orb-3"></div>
+    <div class="ambient-grid"></div>
+  </div>
+
+  <div class="app-shell">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar" aria-label="Primary navigation">
+      <a class="brand" href="#overview" data-nav="overview">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" fill="none"><path d="M16 3 4.5 9.5v13L16 29l11.5-6.5v-13L16 3Z" stroke="currentColor" stroke-width="2.2"/><path d="M10.5 16.5 15 21l7-8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        <span class="brand-copy">
+          <strong>Student Ecosystem</strong>
+          <small>MIT-WPU · Pune</small>
+        </span>
+      </a>
+
+      <nav class="nav">
+        <span class="nav-label">Today</span>
+        <a class="nav-item" href="#overview" data-nav="overview"><span class="nav-icon"><svg class="icon"><use href="#i-home"/></svg></span><span>Overview</span></a>
+        <a class="nav-item" href="#campus" data-nav="campus"><span class="nav-icon"><svg class="icon"><use href="#i-campus"/></svg></span><span>MIT-WPU Updates</span><em class="nav-badge" id="nav-campus-badge" hidden>0</em></a>
+        <a class="nav-item" href="#tasks" data-nav="tasks"><span class="nav-icon"><svg class="icon"><use href="#i-tasks"/></svg></span><span>Task Hub</span><em class="nav-badge" id="nav-task-badge" hidden>0</em></a>
+
+        <span class="nav-label">Discover</span>
+        <a class="nav-item" href="#opportunities" data-nav="opportunities"><span class="nav-icon"><svg class="icon"><use href="#i-trophy"/></svg></span><span>Hackathons &amp; Events</span></a>
+        <a class="nav-item" href="#news" data-nav="news"><span class="nav-icon"><svg class="icon"><use href="#i-news"/></svg></span><span>AI News &amp; Briefings</span></a>
+        <a class="nav-item" href="#mail" data-nav="mail"><span class="nav-icon"><svg class="icon"><use href="#i-mail"/></svg></span><span>Mail Summarizer</span></a>
+
+        <span class="nav-label">Workspace</span>
+        <a class="nav-item" href="#vault" data-nav="vault"><span class="nav-icon"><svg class="icon"><use href="#i-book"/></svg></span><span>Academic Vault</span></a>
+        <a class="nav-item" href="#saved" data-nav="saved"><span class="nav-icon"><svg class="icon"><use href="#i-bookmark"/></svg></span><span>Saved</span><em class="nav-badge" id="nav-saved-badge" hidden>0</em></a>
+        <a class="nav-item" href="#settings" data-nav="settings"><span class="nav-icon"><svg class="icon"><use href="#i-settings"/></svg></span><span>Settings</span></a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <button class="profile-chip" type="button" data-open-settings>
+          <span class="avatar" id="sidebar-avatar">M</span>
+          <span class="profile-chip-copy">
+            <strong id="sidebar-name">MIT-WPU Student</strong>
+            <small id="sidebar-branch">Computer Science</small>
+          </span>
+          <svg class="icon"><use href="#i-chevron-right"/></svg>
+        </button>
+        <div class="ai-status" id="ai-status-pill">
+          <span class="status-dot"></span>
+          <span id="ai-status-text">Smart fallback</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <div class="main">
+      <header class="topbar">
+        <button class="icon-btn menu-btn" id="menu-btn" type="button" aria-label="Open navigation" aria-expanded="false">
+          <svg class="icon"><use href="#i-menu"/></svg>
+        </button>
+
+        <div class="topbar-title">
+          <span class="topbar-eyebrow" id="topbar-eyebrow">Your daily companion</span>
+          <h1 id="topbar-title">Overview</h1>
+        </div>
+
+        <button class="search-trigger" id="search-trigger" type="button" aria-label="Open command palette">
+          <svg class="icon"><use href="#i-search"/></svg>
+          <span>Search everything…</span>
+          <kbd><span class="kbd-mod">Ctrl</span>K</kbd>
+        </button>
+
+        <div class="topbar-actions">
+          <button class="icon-btn" id="notification-btn" type="button" aria-label="Deadline notifications" aria-haspopup="true">
+            <svg class="icon"><use href="#i-bell"/></svg>
+            <span class="notification-dot" id="notification-dot" hidden></span>
+          </button>
+          <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle theme" aria-pressed="false">
+            <span class="theme-icon theme-icon-sun"><svg class="icon"><use href="#i-sun"/></svg></span>
+            <span class="theme-icon theme-icon-moon"><svg class="icon"><use href="#i-moon"/></svg></span>
+          </button>
+          <button class="avatar avatar-btn" id="topbar-avatar" type="button" aria-label="Open settings" data-open-settings>M</button>
+        </div>
+
+        <div class="notification-panel" id="notification-panel" hidden>
+          <div class="panel-head">
+            <strong>Up next</strong>
+            <a href="#tasks" class="text-link">All tasks <svg class="icon"><use href="#i-arrow-right"/></svg></a>
+          </div>
+          <div id="notification-list" class="notification-list"></div>
+        </div>
+      </header>
+
+      <main class="view-wrap" id="view-wrap" tabindex="-1">
+        <!-- ============ OVERVIEW ============ -->
+        <section class="view" id="view-overview" data-view="overview">
+          <div class="overview-hero">
+            <div class="hero-copy">
+              <span class="eyebrow"><span class="eyebrow-dot"></span><span id="today-label">Today</span></span>
+              <h2 class="hero-title" id="greeting-title">Good evening, student.</h2>
+              <p class="hero-sub" id="greeting-sub">Here is what matters at MIT-WPU today — campus updates, deadlines, opportunities and engineering news, distilled.</p>
+              <div class="hero-actions">
+                <a class="btn btn-primary" href="#tasks" data-nav="tasks"><svg class="icon"><use href="#i-plus"/></svg>Plan my day</a>
+                <a class="btn btn-ghost" href="#mail" data-nav="mail"><svg class="icon"><use href="#i-sparkles"/></svg>Summarize a notice</a>
+              </div>
+              <div class="hero-meta">
+                <span><svg class="icon"><use href="#i-pin"/></svg>MIT World Peace University, Pune</span>
+                <span><svg class="icon"><use href="#i-bolt"/></svg><span id="hero-mode">Smart summaries on</span></span>
+              </div>
+            </div>
+
+            <div class="focus-card" id="focus-card">
+              <div class="focus-top">
+                <span class="focus-label"><svg class="icon"><use href="#i-compass"/></svg> Today's focus</span>
+                <span class="pill pill-soft" id="focus-count">0 tasks</span>
+              </div>
+              <div class="focus-body">
+                <div class="focus-ring" id="focus-ring" style="--progress:0">
+                  <div class="focus-ring-inner">
+                    <strong id="focus-done">0</strong>
+                    <small>of <span id="focus-total">0</span></small>
+                  </div>
+                </div>
+                <div class="focus-copy">
+                  <h3 id="focus-headline">Make today count</h3>
+                  <p id="focus-summary">Your daily briefing will appear here.</p>
+                </div>
+              </div>
+              <div class="focus-progress"><span id="focus-bar"></span></div>
+              <div class="focus-foot">
+                <span id="focus-next">No deadlines this week</span>
+                <a href="#tasks" class="text-link">Open hub <svg class="icon"><use href="#i-arrow-right"/></svg></a>
+              </div>
+            </div>
+          </div>
+
+          <div class="stat-grid" id="overview-stats" aria-label="Your stats"></div>
+
+          <div class="overview-grid">
+            <section class="panel panel-briefing">
+              <div class="panel-head">
+                <div>
+                  <span class="eyebrow">AI DAILY BRIEFING</span>
+                  <h3>Your edge for today</h3>
+                </div>
+                <button class="icon-btn small" id="briefing-refresh" type="button" aria-label="Regenerate briefing">
+                  <svg class="icon"><use href="#i-refresh"/></svg>
+                </button>
+              </div>
+              <div id="briefing-body" class="briefing-body"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <div><span class="eyebrow">TODAY'S LINEUP</span><h3>Three things worth your time</h3></div>
+              </div>
+              <div id="overview-lineup" class="lineup"></div>
+            </section>
+          </div>
+
+          <div class="overview-grid two-even">
+            <section class="panel">
+              <div class="panel-head">
+                <div><span class="eyebrow">DEADLINE RADAR</span><h3>Coming up</h3></div>
+                <a href="#tasks" class="text-link">All tasks <svg class="icon"><use href="#i-arrow-right"/></svg></a>
+              </div>
+              <div id="overview-deadlines" class="deadline-list"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <div><span class="eyebrow">SHORTCUTS</span><h3>Jump back in</h3></div>
+              </div>
+              <div id="overview-quick" class="quick-grid"></div>
+            </section>
+          </div>
+        </section>
+
+        <!-- ============ CAMPUS ============ -->
+        <section class="view" id="view-campus" data-view="campus">
+          <div class="view-head">
+            <div>
+              <span class="eyebrow">MIT-WPU UPDATES HUB</span>
+              <h2>Campus, decoded.</h2>
+              <p>Notices, exams, academic dates and club events — each with a TL;DR and the exact next step.</p>
+            </div>
+            <div class="view-head-actions">
+              <button class="btn btn-secondary" id="campus-refresh" type="button"><svg class="icon"><use href="#i-refresh"/></svg>Refresh</button>
+            </div>
+          </div>
+
+          <div class="source-strip" id="campus-source"></div>
+
+          <div class="toolbar">
+            <div class="search-field">
+              <svg class="icon"><use href="#i-search"/></svg>
+              <input type="search" id="campus-search" placeholder="Search notices, exams, events…" aria-label="Search campus updates" autocomplete="off">
+            </div>
+            <div class="chip-row" id="campus-categories" role="tablist" aria-label="Filter by category"></div>
+          </div>
+
+          <div class="feed-grid" id="campus-grid"></div>
+        </section>
+
+        <!-- ============ OPPORTUNITIES ============ -->
+        <section class="view" id="view-opportunities" data-view="opportunities">
+          <div class="view-head">
+            <div>
+              <span class="eyebrow">OPPORTUNITY RADAR</span>
+              <h2>Hackathons, contests &amp; things worth doing.</h2>
+              <p>High-signal opportunities across Pune, India and the world — with deadlines, modes, prizes and why they matter.</p>
+            </div>
+            <div class="view-head-actions">
+              <button class="btn btn-secondary" id="opp-refresh" type="button"><svg class="icon"><use href="#i-refresh"/></svg>Refresh</button>
+            </div>
+          </div>
+
+          <div class="opp-stats" id="opp-stats"></div>
+
+          <div class="toolbar toolbar-wrap">
+            <div class="search-field">
+              <svg class="icon"><use href="#i-search"/></svg>
+              <input type="search" id="opp-search" placeholder="Search hackathons, fellowships, open source…" aria-label="Search opportunities" autocomplete="off">
+            </div>
+            <div class="select-group">
+              <label class="select-field">
+                <span>Mode</span>
+                <select id="opp-mode">
+                  <option value="All">All modes</option>
+                  <option value="Online">Online</option>
+                  <option value="In-Person">In-Person</option>
+                  <option value="Hybrid">Hybrid</option>
+                </select>
+              </label>
+              <label class="select-field">
+                <span>Deadline</span>
+                <select id="opp-deadline">
+                  <option value="">Any time</option>
+                  <option value="7">Next 7 days</option>
+                  <option value="30">Next 30 days</option>
+                  <option value="open">Still open</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div class="chip-row opp-tracks" id="opp-tracks" role="tablist" aria-label="Filter by track"></div>
+
+          <div class="opp-grid" id="opp-grid"></div>
+        </section>
+
+        <!-- ============ NEWS ============ -->
+        <section class="view" id="view-news" data-view="news">
+          <div class="view-head">
+            <div>
+              <span class="eyebrow">AI NEWS &amp; BRIEFINGS</span>
+              <h2>Your field, without the noise.</h2>
+              <p>Branch-aware engineering news with three-line AI briefings, key takeaways and a saved reading list.</p>
+            </div>
+            <div class="view-head-actions">
+              <label class="select-field branch-field">
+                <span>Branch</span>
+                <select id="news-branch" aria-label="Select engineering branch"></select>
+              </label>
+              <button class="btn btn-secondary" id="news-refresh" type="button"><svg class="icon"><use href="#i-refresh"/></svg>Refresh</button>
+            </div>
+          </div>
+
+          <div class="source-strip" id="news-source"></div>
+
+          <div class="toolbar">
+            <div class="search-field">
+              <svg class="icon"><use href="#i-search"/></svg>
+              <input type="search" id="news-search" placeholder="Search this briefing…" aria-label="Search news" autocomplete="off">
+            </div>
+            <span class="toolbar-note" id="news-count-label"></span>
+          </div>
+
+          <div class="news-grid" id="news-grid"></div>
+        </section>
+
+        <!-- ============ MAIL ============ -->
+        <section class="view" id="view-mail" data-view="mail">
+          <div class="view-head">
+            <div>
+              <span class="eyebrow">MAIL &amp; NOTICE SUMMARIZER</span>
+              <h2>Paste a notice. Get the point.</h2>
+              <p>Drop a campus email or upload an <code>.eml</code> / <code>.txt</code>. You get a TL;DR, deadlines, action items and a category — then send it straight to your task hub.</p>
+            </div>
+          </div>
+
+          <div class="mail-layout">
+            <section class="panel mail-composer">
+              <form id="mail-form">
+                <div class="field-row">
+                  <label class="field">
+                    <span>Subject <em>optional</em></span>
+                    <input id="mail-subject" name="subject" type="text" placeholder="e.g. End-semester examination schedule" autocomplete="off">
+                  </label>
+                  <label class="field">
+                    <span>From <em>optional</em></span>
+                    <input id="mail-sender" name="sender" type="text" placeholder="e.g. exam@mitwpu.edu.in" autocomplete="off">
+                  </label>
+                </div>
+                <label class="field">
+                  <span>Notice text</span>
+                  <textarea id="mail-body" name="text" rows="11" placeholder="Paste the full email or notice here. Include dates and instructions — the summarizer will extract them."></textarea>
+                </label>
+
+                <div class="file-drop" id="mail-drop">
+                  <input id="mail-file" type="file" accept=".eml,.txt,text/plain,message/rfc822" hidden>
+                  <div class="file-drop-icon"><svg class="icon"><use href="#i-upload"/></svg></div>
+                  <div class="file-drop-copy">
+                    <strong>Drop an .eml or .txt file</strong>
+                    <small>or <button type="button" class="link-btn" id="mail-browse">browse files</button> · max 4 MB</small>
+                  </div>
+                  <span class="file-name" id="mail-file-name" hidden></span>
+                </div>
+
+                <div class="mail-form-foot">
+                  <label class="check-field"><input type="checkbox" id="mail-create-task"> Also add the top action to my tasks</label>
+                  <div class="mail-form-actions">
+                    <button type="button" class="btn btn-ghost" id="mail-sample">Try a sample</button>
+                    <button type="submit" class="btn btn-primary" id="mail-submit"><svg class="icon"><use href="#i-sparkles"/></svg>Summarize notice</button>
+                  </div>
+                </div>
+              </form>
+
+              <div class="mail-result" id="mail-result" aria-live="polite">
+                <div class="empty-state compact">
+                  <div class="empty-icon"><svg class="icon"><use href="#i-mail"/></svg></div>
+                  <h3>Your summary will appear here</h3>
+                  <p>TL;DR, deadlines, action items and a category — structured, scannable and saved to your history.</p>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel mail-history-panel">
+              <div class="panel-head">
+                <div><span class="eyebrow">SAVED SUMMARIES</span><h3>Recent notices</h3></div>
+                <span class="pill pill-soft" id="mail-history-count">0</span>
+              </div>
+              <div class="mail-history" id="mail-history"></div>
+            </section>
+          </div>
+        </section>
+
+        <!-- ============ VAULT ============ -->
+        <section class="view" id="view-vault" data-view="vault">
+          <div class="view-head">
+            <div>
+              <span class="eyebrow">ACADEMIC VAULT</span>
+              <h2>Everything you'll actually reuse.</h2>
+              <p>Curated courses, notes, textbooks and tools by subject — plus your own links, all one search away.</p>
+            </div>
+            <div class="view-head-actions">
+              <button class="btn btn-primary" id="vault-add" type="button"><svg class="icon"><use href="#i-plus"/></svg>Add resource</button>
+            </div>
+          </div>
+
+          <div class="toolbar">
+            <div class="search-field">
+              <svg class="icon"><use href="#i-search"/></svg>
+              <input type="search" id="vault-search" placeholder="Search subject, topic or resource…" aria-label="Search vault" autocomplete="off">
+            </div>
+            <div class="select-group">
+              <label class="select-field">
+                <span>Type</span>
+                <select id="vault-type"><option value="All">All types</option></select>
+              </label>
+              <label class="select-field">
+                <span>Show</span>
+                <select id="vault-scope">
+                  <option value="All">All branches</option>
+                  <option value="mine">My branch</option>
+                  <option value="starred">Starred only</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div class="chip-row" id="vault-subjects" role="tablist" aria-label="Filter by subject"></div>
+
+          <div class="vault-grid" id="vault-grid"></div>
+        </section>
+
+        <!-- ============ TASKS ============ -->
+        <section class="view" id="view-tasks" data-view="tasks">
+          <div class="view-head">
+            <div>
+              <span class="eyebrow">STUDENT TASK HUB</span>
+              <h2>Turn deadlines into done.</h2>
+              <p>Every campus notice, hackathon and mail summary can become a task. Priorities, due dates and drag-to-progress included.</p>
+            </div>
+            <div class="view-head-actions">
+              <button class="btn btn-primary" id="task-add" type="button"><svg class="icon"><use href="#i-plus"/></svg>New task</button>
+            </div>
+          </div>
+
+          <div class="task-toolbar">
+            <div class="search-field">
+              <svg class="icon"><use href="#i-search"/></svg>
+              <input type="search" id="task-search" placeholder="Search tasks…" aria-label="Search tasks" autocomplete="off">
+            </div>
+            <div class="select-group">
+              <label class="select-field">
+                <span>Priority</span>
+                <select id="task-priority">
+                  <option value="All">All</option>
+                  <option value="urgent">Urgent</option>
+                  <option value="high">High</option>
+                  <option value="medium">Medium</option>
+                  <option value="low">Low</option>
+                </select>
+              </label>
+            </div>
+            <div class="task-summary" id="task-summary"></div>
+          </div>
+
+          <div class="kanban" id="task-board"></div>
+        </section>
+
+        <!-- ============ SAVED ============ -->
+        <section class="view" id="view-saved" data-view="saved">
+          <div class="view-head">
+            <div>
+              <span class="eyebrow">YOUR LIBRARY</span>
+              <h2>Saved for later.</h2>
+              <p>Opportunities, briefings and campus notices you bookmarked — in one quiet place.</p>
+            </div>
+          </div>
+          <div class="chip-row" id="saved-tabs" role="tablist" aria-label="Filter saved items"></div>
+          <div class="saved-grid" id="saved-grid"></div>
+        </section>
+
+        <!-- ============ SETTINGS ============ -->
+        <section class="view" id="view-settings" data-view="settings">
+          <div class="view-head">
+            <div>
+              <span class="eyebrow">SETTINGS</span>
+              <h2>Make it yours.</h2>
+              <p>Your branch shapes the news feed and vault. Nothing leaves this device except the text you choose to summarize.</p>
+            </div>
+          </div>
+
+          <div class="settings-layout">
+            <section class="panel">
+              <div class="panel-head"><div><span class="eyebrow">PROFILE</span><h3>Student details</h3></div></div>
+              <form id="settings-form" class="settings-form">
+                <label class="field"><span>Name</span><input id="settings-name" type="text" autocomplete="name" placeholder="Your name"></label>
+                <label class="field"><span>Branch</span><select id="settings-branch"></select></label>
+                <div class="field-row">
+                  <label class="field"><span>Year</span><input id="settings-year" type="text" placeholder="3rd Year"></label>
+                  <label class="field"><span>Semester</span><input id="settings-semester" type="text" placeholder="Semester 5"></label>
+                </div>
+                <label class="field"><span>This semester's goal</span><input id="settings-goal" type="text" placeholder="Land a strong internship while keeping academics on track"></label>
+                <div class="form-foot">
+                  <span class="form-note" id="settings-note"></span>
+                  <button type="submit" class="btn btn-primary">Save changes</button>
+                </div>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head"><div><span class="eyebrow">SYSTEM</span><h3>Under the hood</h3></div></div>
+              <div class="status-list" id="settings-status"></div>
+              <div class="settings-links">
+                <a href="/api/health" target="_blank" rel="noopener">Health check <svg class="icon"><use href="#i-external"/></svg></a>
+                <a href="/api/bootstrap" target="_blank" rel="noopener">Bootstrap payload <svg class="icon"><use href="#i-external"/></svg></a>
+              </div>
+            </section>
+          </div>
+        </section>
+      </main>
+
+      <footer class="app-footer">
+        <span>Built for MIT-WPU students in Pune.</span>
+        <span class="footer-dot">·</span>
+        <span>AI summaries can make mistakes — verify deadlines on the official source.</span>
+        <span class="footer-spacer"></span>
+        <span id="footer-year"></span>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Mobile bottom nav -->
+  <nav class="mobile-nav" aria-label="Mobile navigation">
+    <a href="#overview" data-nav="overview"><svg class="icon"><use href="#i-home"/></svg><span>Home</span></a>
+    <a href="#campus" data-nav="campus"><svg class="icon"><use href="#i-campus"/></svg><span>Campus</span></a>
+    <a href="#opportunities" data-nav="opportunities"><svg class="icon"><use href="#i-trophy"/></svg><span>Radar</span></a>
+    <a href="#mail" data-nav="mail"><svg class="icon"><use href="#i-sparkles"/></svg><span>Summarize</span></a>
+    <a href="#tasks" data-nav="tasks"><svg class="icon"><use href="#i-tasks"/></svg><span>Tasks</span></a>
+  </nav>
+
+  <!-- Command palette -->
+  <div class="overlay" id="palette-overlay" hidden>
+    <div class="palette" role="dialog" aria-modal="true" aria-label="Command palette">
+      <div class="palette-search">
+        <svg class="icon"><use href="#i-search"/></svg>
+        <input id="palette-input" type="text" placeholder="Search views, tasks, resources, opportunities…" autocomplete="off" aria-label="Search everything">
+        <button class="icon-btn small" id="palette-close" type="button" aria-label="Close search"><svg class="icon"><use href="#i-x"/></svg></button>
+      </div>
+      <div class="palette-results" id="palette-results"></div>
+      <div class="palette-foot"><span><kbd>↑</kbd><kbd>↓</kbd> to navigate</span><span><kbd>↵</kbd> to open</span><span><kbd>esc</kbd> to close</span></div>
+    </div>
+  </div>
+
+  <!-- Modal -->
+  <div class="overlay" id="modal-overlay" hidden>
+    <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-head">
+        <div><span class="eyebrow" id="modal-eyebrow">TASK</span><h3 id="modal-title">New task</h3></div>
+        <button class="icon-btn small" id="modal-close" type="button" aria-label="Close dialog"><svg class="icon"><use href="#i-x"/></svg></button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+      <div class="modal-foot" id="modal-foot"></div>
+    </div>
+  </div>
+
+  <div class="toast-stack" id="toast-stack" aria-live="polite" aria-atomic="false"></div>
+
+  <script src="/static/js/core.js?v=3" defer></script>
+  <script src="/static/js/views.js?v=3" defer></script>
+  <script src="/static/js/tools.js?v=3" defer></script>
+  <script src="/static/js/app.js?v=3" defer></script>
+</body>
+</html>

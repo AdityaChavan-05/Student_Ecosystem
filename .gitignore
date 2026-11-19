@@ -1,6 +1,6 @@
 # Python cache files
 
-**pycache**/
+__pycache__/
 *.py[cod]
 *$py.class
 
@@ -32,3 +32,11 @@ Thumbs.db
 # Logs
 
 *.log
+
+# Local runtime data (SQLite lives here; never commit it)
+
+instance/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite3
