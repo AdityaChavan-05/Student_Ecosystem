@@ -67,7 +67,7 @@ All settings live in `.env` (see `.env.example`) and are read by `config.py`.
 | `SECRET_KEY` | dev key | Flask session signing. Set a real value in production. |
 | `FLASK_DEBUG` | `false` | Flask debug mode. |
 | `PORT` | `5000` | Development server port. |
-| `DATABASE_PATH` | `instance/student_ecosystem.db` | SQLite file. Use `/tmp/...` on read-only hosts. |
+| `DATABASE_PATH` | `instance/student_ecosystem.db` | SQLite file. Auto-falls back to a temp dir on read-only hosts such as Vercel. |
 | `AI_API_KEY` | empty | Google AI Studio key (`GEMINI_API_KEY` also accepted). |
 | `GEMINI_MODEL` | `gemini-2.5-flash` | Primary model. |
 | `GEMINI_FALLBACK_MODELS` | `gemini-2.5-flash,gemini-2.0-flash,gemini-1.5-flash` | Ordered fallbacks. |
@@ -190,11 +190,7 @@ Set `SECRET_KEY`, keep `DATABASE_PATH` on a persistent volume (e.g. `/data/stude
 
 ### Vercel
 
-`vercel.json` already routes everything to the Flask app. Serverless filesystems are read-only apart from `/tmp`, so set:
-
-```dotenv
-DATABASE_PATH=/tmp/student_ecosystem.db
-```
+`vercel.json` routes every request to the Flask app, which serves the SPA and static assets itself. Serverless filesystems are read-only apart from `/tmp`; `config.py` detects this automatically and falls back to a temp-dir SQLite file, so no extra configuration is needed. Set `DATABASE_PATH` explicitly only if you want a different location.
 
 Note that `/tmp` is ephemeral between cold starts; for durable data deploy on a host with a persistent disk, or point `DATABASE_PATH` at a mounted volume.
 

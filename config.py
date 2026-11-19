@@ -34,6 +34,31 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _default_database_path() -> str:
+    """Return a writable SQLite path.
+
+    Locally the database lives beside the app. On read-only hosts (notably
+    Vercel serverless functions) that directory cannot be created, so fall
+    back to the system temp directory. An explicit ``DATABASE_PATH`` is always
+    respected.
+    """
+    configured = os.getenv("DATABASE_PATH", "").strip()
+    if configured:
+        return configured
+
+    local = BASE_DIR / "instance" / "student_ecosystem.db"
+    try:
+        local.parent.mkdir(parents=True, exist_ok=True)
+        probe = local.parent / ".write_probe"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink()
+    except OSError:
+        import tempfile
+
+        return str(Path(tempfile.gettempdir()) / local.name)
+    return str(local)
+
+
 class Config:
     """Application configuration."""
 
@@ -44,9 +69,7 @@ class Config:
     JSON_SORT_KEYS = False
 
     # Storage -------------------------------------------------------------
-    DATABASE_PATH = os.getenv(
-        "DATABASE_PATH", str(BASE_DIR / "instance" / "student_ecosystem.db")
-    )
+    DATABASE_PATH = _default_database_path()
 
     # AI ------------------------------------------------------------------
     AI_API_KEY = os.getenv("AI_API_KEY", os.getenv("GEMINI_API_KEY", "")).strip()
