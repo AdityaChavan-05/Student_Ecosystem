@@ -527,47 +527,241 @@ function openVaultModal(resource = null) {
    Mail summarizer
    -------------------------------------------------------------------------- */
 
-async function loadMailView(force = false) {
-  if (!state.loaded.mail || force) {
-    const history = $("#mail-history");
-    if (history) history.innerHTML = skeletonRows(4);
-    await fetchSummaries(force);
-  }
-  renderMailHistory();
-  if (state.currentSummary) renderSummaryResult(state.currentSummary);
-}
-
 function renderMailHistory() {
   const container = $("#mail-history");
   if (!container) return;
-  const count = $("#mail-history-count");
-  if (count) count.textContent = String((state.summaries || []).length);
-  if (!state.summaries || !state.summaries.length) {
-    container.innerHTML = `<div class="empty-state compact"><div class="empty-icon">${icon("inbox")}</div><h3>No notices yet</h3><p>Summarize your first email and it will be saved here for later.</p></div>`;
+
+  const summaries = state.summaries || [];
+
+  if (!summaries.length) {
+    container.innerHTML = `
+      <div class="empty-state compact">
+        <h3>No summary history yet</h3>
+        <p>Your summarized emails and notices will appear here.</p>
+      </div>`;
     return;
   }
-  container.innerHTML = state.summaries
-    .map(
-      (summary) => `
-      <article class="history-item" data-action="open-summary" data-id="${esc(summary.id)}">
-        <div class="history-item-top">
-          <span class="pill pill-primary">${esc(summary.category || "General")}</span>
-          <span class="pill ${urgencyClass(summary.urgency)}">${esc(urgencyLabel(summary.urgency))}</span>
-          ${summary.mode === "ai" ? `<span class="pill pill-mint">${icon("sparkles")}AI</span>` : ""}
-        </div>
-        <h4>${esc(summary.subject || "Untitled notice")}</h4>
-        <p>${esc(summary.tldr || "No TL;DR available.")}</p>
-        <div class="history-item-foot">
-          <small>${esc(timeAgo(summary.created_at))}</small>
-          <div style="display:flex;gap:4px">
-            <button class="icon-action" type="button" aria-label="Convert to task" data-action="summary-task" data-id="${esc(summary.id)}">${icon("calendar")}</button>
-            <button class="icon-action" type="button" aria-label="Delete summary" data-action="delete-summary" data-id="${esc(summary.id)}">${icon("trash")}</button>
-          </div>
-        </div>
-      </article>`
-    )
-    .join("");
+
+  container.innerHTML = summaries.map((summary) => `
+    <article class="history-item">
+      <h4>${esc(summary.subject || "Untitled notice")}</h4>
+      <p>${esc(summary.sender || "Unknown sender")}</p>
+      <small>${esc(summary.created_at || "")}</small>
+    </article>
+  `).join("");
 }
+
+async function loadMailView(force = false) {
+  if (!state.loaded.mail || force) {
+    const history = $("#mail-history");
+
+    if (history) {
+      history.innerHTML = skeletonRows(4);
+    }
+
+    await fetchSummaries(force);
+    await loadGmailInbox();
+  }
+
+  await loadGmailPriority();
+
+  renderMailHistory();
+
+  if (state.currentSummary) {
+    renderSummaryResult(state.currentSummary);
+  }
+}
+
+let gmailNextPageToken = null;
+
+async function loadGmailInbox(loadMore = false) {
+  const container = $("#gmail-message-list");
+  const status = $("#gmail-status");
+  const button = $("#gmail-load-more");
+
+  if (!container) return;
+
+  if (!loadMore) {
+    gmailNextPageToken = null;
+    container.innerHTML = `<p>Loading emails...</p>`;
+  }
+
+  if (loadMore && !gmailNextPageToken) return;
+
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Loading...";
+  }
+
+  try {
+    let url = "/api/gmail/messages";
+
+    if (loadMore && gmailNextPageToken) {
+      url += "?pageToken=" + encodeURIComponent(gmailNextPageToken);
+    }
+
+    const result = await api(url);
+
+    if (status) {
+      status.textContent = "Gmail connected";
+    }
+
+    if (!loadMore) {
+      container.innerHTML = "";
+    }
+
+    if (result.messages && result.messages.length) {
+      container.insertAdjacentHTML(
+        "beforeend",
+        result.messages.map((message) => `
+          <article class="history-item">
+            <h4>${esc(message.subject)}</h4>
+            <p>${esc(message.from)}</p>
+            <p>${esc(message.snippet)}</p>
+            <small>${esc(message.date)}</small>
+          </article>
+        `).join("")
+      );
+    } else if (!loadMore) {
+      container.innerHTML = `<p>Your inbox is empty.</p>`;
+    }
+
+    gmailNextPageToken = result.nextPageToken || null;
+
+    if (button) {
+      button.style.display = gmailNextPageToken ? "block" : "none";
+    }
+
+  } catch (error) {
+    if (status) {
+      status.textContent = "Unable to connect to Gmail";
+    }
+
+    if (!loadMore) {
+      container.innerHTML = `<p>${esc(error.message)}</p>`;
+    } else {
+      toast(error.message, { type: "error", title: "Unable to load more emails" });
+    }
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = "Load More Emails";
+    }
+  }
+}
+ 
+async function loadGmailPriority() {
+  const container = $("#gmail-priority-list");
+  if (!container) return;
+
+  container.innerHTML = `<p>Loading important alerts...</p>`;
+
+  try {
+    const result = await api("/api/gmail/priority");
+    const messages = (result.messages || [])
+      .filter((message) => message.alert_status !== "handled")
+      .filter((message) => Number(message.importance) >= 20);
+
+    if (!messages.length) {
+      container.innerHTML = `
+        <div class="empty-state compact">
+          <p>No important student alerts found.</p>
+        </div>`;
+      return;
+    }
+
+    container.innerHTML = messages.map((message) => {
+      const deadlines = message.deadlines || [];
+      const actions = message.action_items || [];
+
+      return `
+        <article class="history-item gmail-alert-item">
+          <div class="summary-head">
+            <h4>${esc(message.subject || "Important email")}</h4>
+            <span class="pill pill-primary">${esc(message.category)}</span>
+            <span class="pill ${urgencyClass(message.urgency)}">
+              ${esc(urgencyLabel(message.urgency))}
+            </span>
+          </div>
+
+          <p>${esc(message.sender || "Unknown sender")}</p>
+          <p>${esc(message.tldr || "No summary available.")}</p>
+
+          <p><strong>Importance:</strong> ${Number(message.importance)}/100</p>
+
+          ${deadlines.length ? `
+            <div class="summary-deadlines">
+              ${deadlines.map((deadline) => `
+                <p>
+                  <strong>${esc(deadline.label || "Deadline")}:</strong>
+                  ${esc(deadline.date || "Date not specified")}
+                </p>
+              `).join("")}
+            </div>
+          ` : ""}
+
+          ${actions.length ? `
+            <div>
+              <strong>Required actions:</strong>
+              <ul>
+                ${actions.map((action) => `<li>${esc(action)}</li>`).join("")}
+              </ul>
+            </div>
+          ` : ""}
+
+          ${message.task_id ? `
+            <p class="muted">Task created successfully.</p>
+          ` : ""}
+
+          <button
+            type="button"
+            class="btn btn-secondary btn-sm"
+            data-gmail-handle="${esc(message.message_id)}"
+          >
+            Mark as handled
+          </button>
+        </article>
+      `;
+    }).join("");
+
+    if (!container.dataset.handleListener) {
+      container.addEventListener("click", async (event) => {
+        const button = event.target.closest("[data-gmail-handle]");
+        if (!button) return;
+
+        button.disabled = true;
+
+        try {
+          await api(
+            `/api/gmail/alerts/${encodeURIComponent(button.dataset.gmailHandle)}`,
+            {
+              method: "PATCH",
+              body: { status: "handled" },
+            }
+          );
+
+          await loadGmailPriority();
+          toast("Alert marked as handled.", { title: "Updated" });
+        } catch (error) {
+          button.disabled = false;
+          toast(error.message, {
+            type: "error",
+            title: "Update failed",
+          });
+        }
+      });
+
+      container.dataset.handleListener = "true";
+    }
+
+  } catch (error) {
+    container.innerHTML = `
+      <div class="empty-state compact">
+        <p>${esc(error.message || "Unable to load Gmail alerts.")}</p>
+      </div>`;
+  }
+}
+
 
 function renderSummaryResult(summary) {
   if (!summary) return;
@@ -968,10 +1162,7 @@ async function handleAction(action, data, button) {
     return;
   }
 
-  if (action === "retry-mail") {
-    $("#mail-form")?.requestSubmit();
-    return;
-  }
+  
 
   if (action === "toggle-star") {
     const resource = state.vault.find((item) => String(item.id) === String(id));
