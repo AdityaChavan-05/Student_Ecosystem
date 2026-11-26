@@ -46,12 +46,53 @@ async function boot() {
   updateBadges();
   await route();
 
-  // Warm the opportunity + vault data in the background so the views feel instant.
+// Automatically analyse Gmail messages every 15 minutes.
+let gmailAnalysisRunning = false;
+
+const runAutomaticGmailAnalysis = async () => {
+  if (gmailAnalysisRunning || document.visibilityState !== "visible") {
+    return;
+  }
+
+  gmailAnalysisRunning = true;
+
+  try {
+    const result = await api("/api/gmail/analyse", {
+      method: "POST",
+    });
+
+    console.log(
+      `Automatic Gmail analysis: ${result.processed} checked, ${result.failed} failed.`
+    );
+
+    if (currentView() === "mail") {
+      await loadGmailPriority();
+    }
+  } catch (error) {
+    console.warn("Automatic Gmail analysis unavailable:", error.message);
+  } finally {
+    gmailAnalysisRunning = false;
+  }
+};
+
+// Run once when the website starts.
+runAutomaticGmailAnalysis();
+
+// Repeat every 15 minutes while the page is visible.
+window.setInterval(runAutomaticGmailAnalysis, 15 * 60 * 1000);
+
+  // Warm the opportunity + vault data in the background.
   if (!state.loaded.opportunities) {
     fetchOpportunities().then(() => {
-      if (currentView() === "opportunities" || currentView() === "overview") rerenderActiveView();
+      if (
+        currentView() === "opportunities" ||
+        currentView() === "overview"
+      ) {
+        rerenderActiveView();
+      }
     }).catch(() => {});
   }
+
   if (!state.loaded.vault) {
     fetchVault().catch(() => {});
   }
@@ -228,60 +269,50 @@ function bindInterface() {
   });
 
   /* Mail ----------------------------------------------------------------- */
-  $("#mail-form")?.addEventListener("submit", handleMailSubmit);
-  $("#mail-sample")?.addEventListener("click", sampleNotice);
-  $("#mail-browse")?.addEventListener("click", (event) => {
-    event.stopPropagation();
-    $("#mail-file")?.click();
-  });
-  $("#mail-drop")?.addEventListener("click", (event) => {
-    if (event.target.closest("button")) return;
-    $("#mail-file")?.click();
-  });
-  $("#mail-file")?.addEventListener("change", (event) => {
-    const file = event.target.files?.[0];
-    const label = $("#mail-file-name");
-    if (label && file) {
-      label.textContent = file.name;
-      label.hidden = false;
-    }
-  });
+ $("#gmail-refresh")?.addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  button.disabled = true;
 
-  const drop = $("#mail-drop");
-  if (drop) {
-    ["dragenter", "dragover"].forEach((type) => {
-      drop.addEventListener(type, (event) => {
-        event.preventDefault();
-        drop.classList.add("dragover");
-      });
-    });
-    ["dragleave", "drop"].forEach((type) => {
-      drop.addEventListener(type, (event) => {
-        event.preventDefault();
-        drop.classList.remove("dragover");
-      });
-    });
-    drop.addEventListener("drop", (event) => {
-      const file = event.dataTransfer?.files?.[0];
-      if (!file) return;
-      const input = $("#mail-file");
-      if (input) {
-        try {
-          const transfer = new DataTransfer();
-          transfer.items.add(file);
-          input.files = transfer.files;
-        } catch {
-          toast("This browser blocked drag-and-drop uploads. Use browse instead.", { type: "error", title: "Upload unavailable" });
-          return;
-        }
-      }
-      const label = $("#mail-file-name");
-      if (label) {
-        label.textContent = file.name;
-        label.hidden = false;
-      }
-    });
+  try {
+    await loadGmailInbox();
+    toast("Gmail inbox refreshed.", { title: "Up to date" });
+  } catch (error) {
+    toast(error.message, { type: "error", title: "Refresh failed" });
+  } finally {
+    button.disabled = false;
   }
+});
+
+$("#gmail-analyse")?.addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  button.textContent = "Analysing...";
+
+  try {
+    const result = await api("/api/gmail/analyse", {
+      method: "POST",
+    });
+
+    await loadGmailPriority();
+
+    toast(
+      `Analysed ${result.processed} emails. ${result.failed} failed.`,
+      { title: "Gmail analysis complete" }
+    );
+  } catch (error) {
+    toast(error.message, {
+      type: "error",
+      title: "Analysis failed",
+    });
+  } finally {
+    button.disabled = false;
+    button.textContent = "Analyse Gmail";
+  }
+});
+
+$("#gmail-load-more")?.addEventListener("click", async () => {
+  await loadGmailInbox(true);
+});
 
   /* Vault ---------------------------------------------------------------- */
   $("#vault-add")?.addEventListener("click", () => openVaultModal(null));

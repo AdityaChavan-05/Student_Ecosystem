@@ -40,3 +40,17 @@ instance/
 *.db-wal
 *.db-shm
 *.sqlite3
+# Gmail OAuth credentials and tokens
+credentials.json
+client_secret*.json
+token.json
+*.token
+# Private credentials
+credentials*.json
+token*.json
+.env
+
+# Private credentials
+credentials*.json
+token*.json
+.env

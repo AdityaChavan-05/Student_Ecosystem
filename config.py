@@ -1,10 +1,9 @@
+
 """Central configuration for the Student Ecosystem application.
 
 Every value can be supplied through environment variables (or a local
-``.env`` file). Sensible defaults keep the application fully functional
-without any external credentials: the database is local SQLite, feeds fall
-back to curated content and AI summaries fall back to a deterministic
-extractive summarizer.
+.env file). Sensible defaults keep the application fully functional
+without any external credentials.
 """
 
 from __future__ import annotations
@@ -35,13 +34,7 @@ def _env_int(name: str, default: int) -> int:
 
 
 def _default_database_path() -> str:
-    """Return a writable SQLite path.
-
-    Locally the database lives beside the app. On read-only hosts (notably
-    Vercel serverless functions) that directory cannot be created, so fall
-    back to the system temp directory. An explicit ``DATABASE_PATH`` is always
-    respected.
-    """
+    """Return a writable SQLite path."""
     configured = os.getenv("DATABASE_PATH", "").strip()
     if configured:
         return configured
@@ -56,6 +49,7 @@ def _default_database_path() -> str:
         import tempfile
 
         return str(Path(tempfile.gettempdir()) / local.name)
+
     return str(local)
 
 
@@ -65,16 +59,37 @@ class Config:
     # Flask ---------------------------------------------------------------
     SECRET_KEY = os.getenv("SECRET_KEY", "student-ecosystem-dev-key")
     DEBUG = _env_bool("FLASK_DEBUG", False)
-    MAX_CONTENT_LENGTH = 6 * 1024 * 1024  # 6 MB upload cap
+    MAX_CONTENT_LENGTH = 6 * 1024 * 1024
     JSON_SORT_KEYS = False
+
+    # Gmail OAuth ---------------------------------------------------------
+    GOOGLE_CLIENT_SECRETS_FILE = os.getenv(
+        "GOOGLE_CLIENT_SECRETS_FILE",
+        str(BASE_DIR / "credentials.json"),
+    )
+    GOOGLE_REDIRECT_URI = os.getenv(
+        "GOOGLE_REDIRECT_URI",
+        "http://127.0.0.1:5000/auth/google/callback",
+    )
+    GMAIL_TOKEN_FILE = os.getenv(
+        "GMAIL_TOKEN_FILE",
+        str(BASE_DIR / "instance" / "gmail_token.json"),
+    )
 
     # Storage -------------------------------------------------------------
     DATABASE_PATH = _default_database_path()
 
     # AI ------------------------------------------------------------------
-    AI_API_KEY = os.getenv("AI_API_KEY", os.getenv("GEMINI_API_KEY", "")).strip()
-    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
-    # Ordered fallbacks used when the primary model is unavailable.
+    AI_API_KEY = os.getenv(
+        "AI_API_KEY",
+        os.getenv("GEMINI_API_KEY", ""),
+    ).strip()
+
+    GEMINI_MODEL = os.getenv(
+        "GEMINI_MODEL",
+        "gemini-2.5-flash",
+    ).strip()
+
     GEMINI_FALLBACK_MODELS = tuple(
         model.strip()
         for model in os.getenv(
@@ -83,16 +98,30 @@ class Config:
         ).split(",")
         if model.strip()
     )
+
     AI_TIMEOUT_SECONDS = _env_int("AI_TIMEOUT_SECONDS", 40)
     AI_MAX_INPUT_CHARS = _env_int("AI_MAX_INPUT_CHARS", 14000)
 
     # Campus feed ---------------------------------------------------------
     COLLEGE_WEBSITE_URL = os.getenv(
-        "COLLEGE_WEBSITE_URL", "https://mitwpu.edu.in/"
+        "COLLEGE_WEBSITE_URL",
+        "https://mitwpu.edu.in/",
     ).strip()
-    COLLEGE_NAME = os.getenv("COLLEGE_NAME", "MIT World Peace University").strip()
-    COLLEGE_SHORT_NAME = os.getenv("COLLEGE_SHORT_NAME", "MIT-WPU").strip()
-    COLLEGE_CITY = os.getenv("COLLEGE_CITY", "Pune, Maharashtra").strip()
+
+    COLLEGE_NAME = os.getenv(
+        "COLLEGE_NAME",
+        "MIT World Peace University",
+    ).strip()
+
+    COLLEGE_SHORT_NAME = os.getenv(
+        "COLLEGE_SHORT_NAME",
+        "MIT-WPU",
+    ).strip()
+
+    COLLEGE_CITY = os.getenv(
+        "COLLEGE_CITY",
+        "Pune, Maharashtra",
+    ).strip()
 
     # Caching -------------------------------------------------------------
     NEWS_CACHE_MINUTES = _env_int("NEWS_CACHE_MINUTES", 30)
@@ -108,7 +137,7 @@ class Config:
     # Server --------------------------------------------------------------
     PORT = _env_int("PORT", 5000)
 
-    # CORS: comma separated origins. "*" allows any origin (read-only usage).
+    # CORS ----------------------------------------------------------------
     CORS_ORIGINS = [
         origin.strip()
         for origin in os.getenv("CORS_ORIGINS", "*").split(",")

@@ -8,17 +8,31 @@ usable. Gemini, live RSS and live campus scraping layer on top when available.
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import html
 import io
 import logging
 import os
 import re
+import secrets
+os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 from datetime import date, datetime, timezone
 from email import policy
 from email.parser import BytesParser
 from pathlib import Path
 
-from flask import Flask, Response, jsonify, redirect, render_template, request, send_from_directory
+from google.auth.transport.requests import Request as GoogleAuthRequest
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import Flow
+from googleapiclient.discovery import build
+
+from flask import (
+    Flask, Response, jsonify, redirect, render_template,
+    request, send_from_directory, session
+)
+
+GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 
 from ai_summarizer import (
     ai_available,
@@ -40,11 +54,16 @@ from database import (
     delete_summary,
     delete_task,
     get_cached_value,
+    get_gmail_processed_message,
+    list_gmail_processed_messages,
+    save_gmail_processed_message,
+    update_gmail_alert_status,
     get_resource,
     get_settings,
     get_stats,
     get_summary,
     get_task,
+    get_task_by_source,
     init_db,
     is_database_configured,
     list_bookmarks,
@@ -61,6 +80,7 @@ from database import (
     update_task,
 )
 from news_fetcher import get_news
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -88,6 +108,410 @@ init_db()
 # Helpers
 # ---------------------------------------------------------------------------
 
+def get_gmail_credentials():
+    """Load and refresh saved Gmail OAuth credentials."""
+    token_path = Path(Config.GMAIL_TOKEN_FILE)
+
+    if not token_path.exists():
+        return None
+
+    credentials = Credentials.from_authorized_user_file(
+        str(token_path),
+        GMAIL_SCOPES,
+    )
+
+    if credentials.expired and credentials.refresh_token:
+        credentials.refresh(GoogleAuthRequest())
+        token_path.parent.mkdir(parents=True, exist_ok=True)
+        token_path.write_text(
+            credentials.to_json(),
+            encoding="utf-8",
+        )
+
+    if not credentials.valid:
+        return None
+
+    return credentials
+
+
+def get_gmail_service():
+    """Create an authenticated, read-only Gmail API service."""
+    credentials = get_gmail_credentials()
+
+    if credentials is None:
+        return None
+
+    return build(
+        "gmail",
+        "v1",
+        credentials=credentials,
+        cache_discovery=False,
+    )
+
+def decode_gmail_body(data: str) -> str:
+    """Decode Gmail's URL-safe Base64 message content."""
+    if not data:
+        return ""
+
+    try:
+        decoded = base64.urlsafe_b64decode(
+            data + "=" * (-len(data) % 4)
+        )
+        return decoded.decode("utf-8", errors="replace")
+    except Exception:
+        return ""
+
+
+def decode_gmail_body(data: str) -> str:
+    """Decode Gmail's URL-safe Base64 message content."""
+    if not data:
+        return ""
+
+    try:
+        decoded = base64.urlsafe_b64decode(
+            data + "=" * (-len(data) % 4)
+        )
+        return decoded.decode("utf-8", errors="replace")
+    except Exception:
+        return ""
+
+
+def extract_gmail_body(payload: dict) -> str:
+    """Extract readable text from Gmail's nested message payload."""
+    plain_parts = []
+    html_parts = []
+
+    def collect_parts(part):
+        mime_type = part.get("mimeType", "")
+        body_data = part.get("body", {}).get("data")
+
+        if mime_type == "text/plain" and body_data:
+            plain_parts.append(decode_gmail_body(body_data))
+
+        elif mime_type == "text/html" and body_data:
+            html_parts.append(decode_gmail_body(body_data))
+
+        for child in part.get("parts", []):
+            collect_parts(child)
+
+    collect_parts(payload)
+
+    if plain_parts:
+        return "\n".join(plain_parts).strip()
+
+    if html_parts:
+        content = "\n".join(html_parts)
+        content = re.sub(
+            r"<(script|style)\b[^>]*>.*?</\1>",
+            " ",
+            content,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        content = re.sub(r"<[^>]+>", " ", content)
+        content = html.unescape(content)
+        return re.sub(r"\s+", " ", content).strip()
+
+    return ""
+
+
+def process_gmail_message(service, message_id: str) -> dict:
+    """Analyse one Gmail message and create a task when action is required."""
+
+    # Prevent processing the same email repeatedly.
+    existing = get_gmail_processed_message(message_id)
+    if existing:
+        return existing
+
+    message = service.users().messages().get(
+        userId="me",
+        id=message_id,
+        format="full",
+    ).execute()
+
+    payload = message.get("payload", {})
+
+    headers = {
+        header["name"].lower(): header["value"]
+        for header in payload.get("headers", [])
+    }
+
+    subject = headers.get("subject", "(No subject)")
+    sender = headers.get("from", "Unknown sender")
+    message_date = headers.get("date", "")
+    thread_id = message.get("threadId", "")
+
+    body = extract_gmail_body(payload)
+
+    if not body:
+        body = message.get("snippet", "")
+
+    # Use the existing AI summarizer.
+    summary = summarize_notice(
+        body,
+        subject=subject,
+        sender=sender,
+    )
+
+    category = summary.get("category", "General")
+    urgency = summary.get("urgency", "normal")
+    actions = summary.get("action_items", [])
+    deadlines = summary.get("deadlines", [])
+
+    # Calculate importance.
+    category_scores = {
+        "Examination": 35,
+        "Academic": 30,
+        "Administration": 25,
+        "Notice": 25,
+        "Placement": 20,
+        "Event": 12,
+        "Club": 5,
+        "General": 5,
+    }
+
+    urgency_scores = {
+        "urgent": 35,
+        "high": 28,
+        "medium": 18,
+        "normal": 8,
+        "low": 0,
+    }
+
+    importance = (
+        category_scores.get(category, 5)
+        + urgency_scores.get(urgency, 5)
+        + min(len(deadlines) * 8, 16)
+        + min(len(actions) * 4, 12)
+    )
+
+    importance = min(importance, 100)
+
+    # Save only the generated summary, not the original email body.
+    saved_summary = create_summary({
+        "subject": subject,
+        "sender": sender,
+        "source": "gmail",
+        "category": category,
+        "urgency": urgency,
+        "tldr": summary.get("tldr", ""),
+        "action_items": actions,
+        "deadlines": deadlines,
+        "tags": summary.get("tags", []),
+        "body": "",
+        "mode": summary.get("mode", "heuristic"),
+    })
+
+    summary_id = saved_summary["id"]
+    task_id = ""
+
+    # Create a task only for relevant student-related actionable emails.
+    student_categories = {
+        "Examination",
+        "Academic",
+        "Administration",
+        "Notice",
+        "Placement",
+    }
+
+    if category in student_categories and actions:
+
+        # Check again to prevent duplicate tasks.
+        existing_task = get_task_by_source("gmail", message_id)
+
+        if existing_task:
+            task_id = existing_task["id"]
+        else:
+            due_date = ""
+
+            for deadline in deadlines:
+                if isinstance(deadline, dict):
+                    candidate = str(deadline.get("date", ""))[:10]
+                    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", candidate):
+                        due_date = candidate
+                        break
+
+            priority = (
+                "high" if urgency in {"urgent", "high"}
+                else "medium" if urgency == "medium"
+                else "low"
+            )
+
+            task = create_task({
+                "title": subject[:300],
+                "notes": (
+                    f"From: {sender}\n"
+                    f"Summary: {summary.get('tldr', '')}\n"
+                    f"Required actions: {'; '.join(actions)}"
+                ),
+                "due_date": due_date,
+                "priority": priority,
+                "tags": ["gmail", category],
+                "source_type": "gmail",
+                "source_id": message_id,
+            })
+
+            task_id = task["id"]
+
+    # Save processing result.
+    return save_gmail_processed_message({
+        "message_id": message_id,
+        "thread_id": thread_id,
+        "subject": subject,
+        "sender": sender,
+        "message_date": message_date,
+        "category": category,
+        "urgency": urgency,
+        "importance": importance,
+        "tldr": summary.get("tldr", ""),
+        "action_items": actions,
+        "deadlines": deadlines,
+        "summary_id": summary_id,
+        "task_id": task_id,
+        "alert_status": "open",
+    })
+
+
+@app.get("/api/gmail/status")
+def gmail_status():
+    credentials = get_gmail_credentials()
+    return jsonify({"connected": credentials is not None})
+
+
+@app.get("/api/gmail/messages")
+def gmail_messages():
+    service = get_gmail_service()
+
+    if service is None:
+        return json_error("Gmail is not connected. Please connect Google first.", 401)
+
+    try:
+        page_token = (request.args.get("pageToken") or "").strip()
+
+        params = {
+            "userId": "me",
+            "maxResults": 20,
+            "q": "in:anywhere -in:spam -in:trash",
+        }
+
+        if page_token:
+            params["pageToken"] = page_token
+
+        result = service.users().messages().list(**params).execute()
+
+        messages = []
+
+        for item in result.get("messages", []):
+            message = service.users().messages().get(
+                userId="me",
+                id=item["id"],
+                format="metadata",
+                metadataHeaders=["From", "Subject", "Date"],
+            ).execute()
+
+            headers = {
+                header["name"].lower(): header["value"]
+                for header in message.get("payload", {}).get("headers", [])
+            }
+
+            messages.append({
+                "id": item["id"],
+                "from": headers.get("from", "Unknown sender"),
+                "subject": headers.get("subject", "(No subject)"),
+                "date": headers.get("date", ""),
+                "snippet": message.get("snippet", ""),
+            })
+
+        return jsonify({
+            "messages": messages,
+            "nextPageToken": result.get("nextPageToken"),
+            "resultSizeEstimate": result.get("resultSizeEstimate", 0),
+        })
+
+    except Exception:
+        app.logger.exception("Gmail inbox fetch failed")
+        return json_error("Unable to fetch Gmail messages.", 500)
+
+
+@app.post("/api/gmail/analyse")
+def gmail_analyse():
+    """Analyse the latest Gmail messages and save their priorities."""
+    service = get_gmail_service()
+
+    if service is None:
+        return json_error("Gmail is not connected.", 401)
+
+    try:
+        result = service.users().messages().list(
+            userId="me",
+            maxResults=20,
+            q="in:anywhere -in:spam -in:trash",
+        ).execute()
+
+        processed = 0
+        failed = 0
+
+        for item in result.get("messages", []):
+            try:
+                process_gmail_message(service, item["id"])
+                processed += 1
+            except Exception:
+                failed += 1
+                app.logger.exception(
+                    "Gmail message analysis failed: %s",
+                    item["id"],
+                )
+
+        return jsonify({
+            "success": True,
+            "processed": processed,
+            "failed": failed,
+        })
+
+    except Exception:
+        app.logger.exception("Gmail analysis failed")
+        return json_error("Unable to analyse Gmail messages.", 500)
+
+
+@app.get("/api/gmail/priority")
+def gmail_priority():
+    """Return analysed Gmail messages in importance order."""
+    if get_gmail_service() is None:
+        return json_error("Gmail is not connected.", 401)
+
+    try:
+        messages = list_gmail_processed_messages(limit=100)
+        return jsonify({"messages": messages})
+    except Exception:
+        app.logger.exception("Unable to load Gmail priorities")
+        return json_error("Unable to load Gmail priorities.", 500)
+
+
+@app.patch("/api/gmail/alerts/<message_id>")
+def gmail_update_alert(message_id):
+    """Mark a Gmail alert as open or handled."""
+    if get_gmail_service() is None:
+        return json_error("Gmail is not connected.", 401)
+
+    data = request.get_json(silent=True) or {}
+    status = data.get("status", "")
+
+    if status not in {"open", "handled"}:
+        return json_error("Status must be open or handled.", 400)
+
+    try:
+        updated = update_gmail_alert_status(message_id, status)
+
+        if not updated:
+            return json_error("Gmail alert not found.", 404)
+
+        return jsonify({"success": True, "status": status})
+
+    except Exception:
+        app.logger.exception("Gmail alert update failed")
+        return json_error("Unable to update Gmail alert.", 500)
+
+    
+    
 def hash_id(prefix: str, value: str) -> str:
     digest = hashlib.sha1((value or "").encode("utf-8", "ignore")).hexdigest()[:12]
     return f"{prefix}{digest}"
@@ -413,6 +837,82 @@ def opportunities_page():
 @app.route("/mail")
 def mail_page():
     return redirect("/#mail")
+
+
+@app.get("/auth/google")
+def google_login():
+    credentials_file = Path(Config.GOOGLE_CLIENT_SECRETS_FILE)
+
+    if not credentials_file.is_file():
+        return json_error("Google OAuth credentials file is missing.", 503)
+
+    flow = Flow.from_client_secrets_file(
+        str(credentials_file),
+        scopes=GMAIL_SCOPES,
+        redirect_uri=Config.GOOGLE_REDIRECT_URI,
+    )
+
+    authorization_url, state = flow.authorization_url(
+        access_type="offline",
+        include_granted_scopes="true",
+        prompt="consent",
+    )
+
+    session["oauth_code_verifier"] = flow.code_verifier
+    session["oauth_state"] = state
+
+    return redirect(authorization_url)
+
+@app.get("/auth/google/callback")
+def google_callback():
+    expected_state = session.pop("oauth_state", None)
+    received_state = request.args.get("state", "")
+
+    if (
+        not expected_state
+        or not received_state
+        or not secrets.compare_digest(expected_state, received_state)
+    ):
+        session.pop("oauth_code_verifier", None)
+        return json_error("Invalid OAuth state. Please try connecting again.", 400)
+
+    if request.args.get("error"):
+        session.pop("oauth_code_verifier", None)
+        return json_error("Google authorization was not completed.", 400)
+
+    try:
+        code_verifier = session.pop("oauth_code_verifier", None)
+
+        if not code_verifier:
+            return json_error(
+                "OAuth verification data is missing. Please try connecting again.",
+                400,
+            )
+
+        flow = Flow.from_client_secrets_file(
+            Config.GOOGLE_CLIENT_SECRETS_FILE,
+            scopes=GMAIL_SCOPES,
+            state=expected_state,
+            redirect_uri=Config.GOOGLE_REDIRECT_URI,
+            code_verifier=code_verifier,
+        )
+
+        flow.fetch_token(authorization_response=request.url)
+
+        credentials = flow.credentials
+        token_path = Path(Config.GMAIL_TOKEN_FILE)
+        token_path.parent.mkdir(parents=True, exist_ok=True)
+        token_path.write_text(
+            credentials.to_json(),
+            encoding="utf-8",
+        )
+
+        return redirect("/#mail")
+
+    except Exception:
+        app.logger.exception("Google OAuth callback failed")
+        return json_error("Google connection failed. Please try again.", 500)
+
 
 
 @app.route("/vault")
@@ -875,21 +1375,52 @@ def search():
 @app.get("/api/notifications")
 def notifications():
     """A compact digest used by the header bell."""
+
     tasks = list_tasks()
-    due = [task for task in tasks if task["status"] != "done" and task.get("due_date")][:5]
+    due = [
+        task for task in tasks
+        if task["status"] != "done" and task.get("due_date")
+    ][:5]
+
     stats = get_stats()
+
     items = [
         {
             "type": "task",
             "title": task["title"],
-            "subtitle": f"Due {task['due_date']}" if task.get("due_date") else "No due date",
+            "subtitle": f"Due {task['due_date']}",
             "priority": task.get("priority", "medium"),
             "due_date": task.get("due_date"),
         }
         for task in due
     ]
-    return jsonify({"count": len(items), "items": items, "stats": stats})
 
+    # Include important, unhandled Gmail alerts.
+    try:
+        gmail_alerts = list_gmail_processed_messages(limit=100)
+
+        for alert in gmail_alerts:
+            if (
+                alert.get("alert_status") == "open"
+                and int(alert.get("importance", 0)) >= 20
+            ):
+                items.append({
+                    "type": "gmail",
+                    "title": alert.get("subject", "Important Gmail alert"),
+                    "subtitle": alert.get("tldr", "Important student email"),
+                    "priority": alert.get("urgency", "normal"),
+                    "importance": alert.get("importance", 0),
+                    "message_id": alert.get("message_id"),
+                })
+
+    except Exception:
+        app.logger.exception("Unable to load Gmail notifications")
+
+    return jsonify({
+        "count": len(items),
+        "items": items,
+        "stats": stats,
+    })
 
 # ---------------------------------------------------------------------------
 # Error handling

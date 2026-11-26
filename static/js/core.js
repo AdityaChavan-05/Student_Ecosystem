@@ -610,37 +610,70 @@ function closeNotificationPanel() {
 async function openNotificationPanel() {
   const panel = $("#notification-panel");
   if (!panel) return;
+
   if (!panel.hidden) {
     panel.hidden = true;
     return;
   }
+
   panel.hidden = false;
+
   const list = $("#notification-list");
   if (list) list.innerHTML = skeletonRows(3);
+
   try {
     const data = await api("/api/notifications");
+
     if (!list) return;
+
     if (!data.items || !data.items.length) {
-      list.innerHTML = `<div class="empty-state compact"><div class="empty-icon">${icon("check")}</div><h3>All clear</h3><p>No deadlines in the next few days. Add tasks to keep it that way.</p></div>`;
+      list.innerHTML = `
+        <div class="empty-state compact">
+          <div class="empty-icon">${icon("check")}</div>
+          <h3>All clear</h3>
+          <p>No pending deadlines or important Gmail alerts.</p>
+        </div>`;
       return;
     }
+
     list.innerHTML = data.items
       .map((item) => {
-        const days = daysUntil(item.due_date);
-        const color =
-          days !== null && days < 0 ? "var(--danger)" : days !== null && days <= 2 ? "var(--warm)" : "var(--mint)";
+        const isGmail = item.type === "gmail";
+
+        const days = isGmail ? null : daysUntil(item.due_date);
+
+        const color = isGmail
+          ? "var(--warm)"
+          : days !== null && days < 0
+            ? "var(--danger)"
+            : days !== null && days <= 2
+              ? "var(--warm)"
+              : "var(--mint)";
+
         return `
-          <a class="notification-item" href="#tasks">
+          <a class="notification-item" href="${isGmail ? "#mail" : "#tasks"}">
             <span class="dot" style="background:${color}"></span>
             <div style="min-width:0">
-              <strong>${esc(item.title)}</strong>
-              <small>${esc(item.subtitle)}</small>
+              <strong>
+                ${isGmail ? "📧 " : ""}
+                ${esc(item.title)}
+              </strong>
+              <small>
+                ${isGmail ? "Important Gmail alert · " : ""}
+                ${esc(item.subtitle)}
+              </small>
             </div>
           </a>`;
       })
       .join("");
+
   } catch (error) {
-    if (list) list.innerHTML = `<div class="empty-state compact"><p>${esc(error.message)}</p></div>`;
+    if (list) {
+      list.innerHTML = `
+        <div class="empty-state compact">
+          <p>${esc(error.message)}</p>
+        </div>`;
+    }
   }
 }
 

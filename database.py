@@ -171,6 +171,30 @@ CREATE TABLE IF NOT EXISTS opportunities (
     created_at     TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS gmail_processed_messages (
+    message_id       TEXT PRIMARY KEY,
+    thread_id        TEXT NOT NULL DEFAULT '',
+    subject          TEXT NOT NULL DEFAULT '',
+    sender           TEXT NOT NULL DEFAULT '',
+    message_date     TEXT NOT NULL DEFAULT '',
+    category         TEXT NOT NULL DEFAULT 'General',
+    urgency          TEXT NOT NULL DEFAULT 'normal',
+    importance       INTEGER NOT NULL DEFAULT 0,
+    tldr             TEXT NOT NULL DEFAULT '',
+    action_items     TEXT NOT NULL DEFAULT '[]',
+    deadlines        TEXT NOT NULL DEFAULT '[]',
+    summary_id       TEXT NOT NULL DEFAULT '',
+    task_id          TEXT NOT NULL DEFAULT '',
+    alert_status     TEXT NOT NULL DEFAULT 'open',
+    analysed_at      TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_gmail_importance
+ON gmail_processed_messages(importance DESC);
+
+CREATE INDEX IF NOT EXISTS idx_gmail_alert_status
+ON gmail_processed_messages(alert_status);
+
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(due_date);
 CREATE INDEX IF NOT EXISTS idx_summaries_created ON summaries(created_at);
@@ -399,6 +423,122 @@ def delete_summary(summary_id: str) -> bool:
         )
     return bool(cursor.rowcount)
 
+# ---------------------------------------------------------------------------
+# Gmail processing and alerts
+# ---------------------------------------------------------------------------
+
+def _gmail_message_row(row: dict) -> dict:
+    item = dict(row)
+    item["action_items"] = _json(item.get("action_items"), [])
+    item["deadlines"] = _json(item.get("deadlines"), [])
+    return item
+
+
+def get_gmail_processed_message(message_id: str):
+    init_db()
+    with get_connection() as connection:
+        row = connection.execute(
+            "SELECT * FROM gmail_processed_messages WHERE message_id = ?",
+            (message_id,)
+        ).fetchone()
+    return _gmail_message_row(dict(row)) if row else None
+
+
+def save_gmail_processed_message(data: dict) -> dict:
+    init_db()
+
+    message_id = str(data.get("message_id") or "").strip()
+    if not message_id:
+        raise ValueError("Gmail message ID is required.")
+
+    now = utcnow()
+
+    with get_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO gmail_processed_messages (
+                message_id, thread_id, subject, sender, message_date,
+                category, urgency, importance, tldr, action_items,
+                deadlines, summary_id, task_id, alert_status, analysed_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(message_id) DO UPDATE SET
+                thread_id = excluded.thread_id,
+                subject = excluded.subject,
+                sender = excluded.sender,
+                message_date = excluded.message_date,
+                category = excluded.category,
+                urgency = excluded.urgency,
+                importance = excluded.importance,
+                tldr = excluded.tldr,
+                action_items = excluded.action_items,
+                deadlines = excluded.deadlines,
+                summary_id = excluded.summary_id,
+                task_id = excluded.task_id,
+                analysed_at = excluded.analysed_at
+            """,
+            (
+                message_id,
+                data.get("thread_id", ""),
+                data.get("subject", ""),
+                data.get("sender", ""),
+                data.get("message_date", ""),
+                data.get("category", "General"),
+                data.get("urgency", "normal"),
+                int(data.get("importance", 0)),
+                data.get("tldr", ""),
+                _dumps(data.get("action_items", [])),
+                _dumps(data.get("deadlines", [])),
+                data.get("summary_id", ""),
+                data.get("task_id", ""),
+                data.get("alert_status", "open"),
+                now,
+            )
+        )
+
+        row = connection.execute(
+            "SELECT * FROM gmail_processed_messages WHERE message_id = ?",
+            (message_id,)
+        ).fetchone()
+
+    return _gmail_message_row(dict(row))
+
+
+def list_gmail_processed_messages(limit: int = 50) -> list:
+    init_db()
+    limit = max(1, min(int(limit), 200))
+
+    with get_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT * FROM gmail_processed_messages
+            ORDER BY importance DESC, analysed_at DESC
+            LIMIT ?
+            """,
+            (limit,)
+        ).fetchall()
+
+    return [_gmail_message_row(dict(row)) for row in rows]
+
+
+def update_gmail_alert_status(message_id: str, status: str) -> bool:
+    init_db()
+
+    if status not in {"open", "handled"}:
+        raise ValueError("Invalid Gmail alert status.")
+
+    with get_connection() as connection:
+        cursor = connection.execute(
+            """
+            UPDATE gmail_processed_messages
+            SET alert_status = ?
+            WHERE message_id = ?
+            """,
+            (status, message_id)
+        )
+
+    return bool(cursor.rowcount)
+
 
 # ---------------------------------------------------------------------------
 # Tasks
@@ -462,6 +602,19 @@ def get_task(task_id: str) -> dict | None:
         ).fetchone()
     return _task_row(dict(row)) if row else None
 
+def get_task_by_source(source_type: str, source_id: str) -> dict | None:
+    init_db()
+    with get_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT * FROM tasks
+            WHERE source_type = ? AND source_id = ?
+            LIMIT 1
+            """,
+            (source_type, source_id)
+        ).fetchone()
+
+    return _task_row(dict(row)) if row else None
 
 def list_tasks(status: str = "", priority: str = "", query: str = "") -> list[dict]:
     init_db()

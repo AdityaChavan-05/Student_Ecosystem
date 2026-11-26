@@ -354,68 +354,64 @@
         <section class="view" id="view-mail" data-view="mail">
           <div class="view-head">
             <div>
-              <span class="eyebrow">MAIL &amp; NOTICE SUMMARIZER</span>
-              <h2>Paste a notice. Get the point.</h2>
-              <p>Drop a campus email or upload an <code>.eml</code> / <code>.txt</code>. You get a TL;DR, deadlines, action items and a category — then send it straight to your task hub.</p>
+              <span class="eyebrow">CONNECTED GMAIL</span>
+              <h2>Your inbox, organised.</h2>
+              <p>Review your emails and keep important MIT-WPU announcements, exams and deadlines in focus.</p>
             </div>
           </div>
 
           <div class="mail-layout">
-            <section class="panel mail-composer">
-              <form id="mail-form">
-                <div class="field-row">
-                  <label class="field">
-                    <span>Subject <em>optional</em></span>
-                    <input id="mail-subject" name="subject" type="text" placeholder="e.g. End-semester examination schedule" autocomplete="off">
-                  </label>
-                  <label class="field">
-                    <span>From <em>optional</em></span>
-                    <input id="mail-sender" name="sender" type="text" placeholder="e.g. exam@mitwpu.edu.in" autocomplete="off">
-                  </label>
-                </div>
-                <label class="field">
-                  <span>Notice text</span>
-                  <textarea id="mail-body" name="text" rows="11" placeholder="Paste the full email or notice here. Include dates and instructions — the summarizer will extract them."></textarea>
-                </label>
-
-                <div class="file-drop" id="mail-drop">
-                  <input id="mail-file" type="file" accept=".eml,.txt,text/plain,message/rfc822" hidden>
-                  <div class="file-drop-icon"><svg class="icon"><use href="#i-upload"/></svg></div>
-                  <div class="file-drop-copy">
-                    <strong>Drop an .eml or .txt file</strong>
-                    <small>or <button type="button" class="link-btn" id="mail-browse">browse files</button> · max 4 MB</small>
-                  </div>
-                  <span class="file-name" id="mail-file-name" hidden></span>
-                </div>
-
-                <div class="mail-form-foot">
-                  <label class="check-field"><input type="checkbox" id="mail-create-task"> Also add the top action to my tasks</label>
-                  <div class="mail-form-actions">
-                    <button type="button" class="btn btn-ghost" id="mail-sample">Try a sample</button>
-                    <button type="submit" class="btn btn-primary" id="mail-submit"><svg class="icon"><use href="#i-sparkles"/></svg>Summarize notice</button>
-                  </div>
-                </div>
-              </form>
-
-              <div class="mail-result" id="mail-result" aria-live="polite">
-                <div class="empty-state compact">
-                  <div class="empty-icon"><svg class="icon"><use href="#i-mail"/></svg></div>
-                  <h3>Your summary will appear here</h3>
-                  <p>TL;DR, deadlines, action items and a category — structured, scannable and saved to your history.</p>
-                </div>
-              </div>
-            </section>
-
-            <section class="panel mail-history-panel">
+            <section class="panel gmail-inbox-panel">
               <div class="panel-head">
-                <div><span class="eyebrow">SAVED SUMMARIES</span><h3>Recent notices</h3></div>
-                <span class="pill pill-soft" id="mail-history-count">0</span>
+                <div>
+                  <span class="eyebrow">CONNECTED GMAIL</span>
+                  <h3>Your inbox</h3>
+                  <p id="gmail-status">Checking Gmail connection...</p>
+                </div>
+
+                <div class="gmail-actions">
+                  <button type="button" class="btn btn-primary" id="gmail-refresh">
+                    Refresh inbox
+                  </button>
+                  <button type="button" class="btn btn-secondary" id="gmail-analyse">
+                    Analyse Gmail
+                  </button>
+                </div>
               </div>
-              <div class="mail-history" id="mail-history"></div>
+
+              <div class="gmail-priority-section">
+                <h3>Important Student Alerts</h3>
+                <p class="section-description">
+                  Exams, assignments, fees and important college deadlines.
+                </p>
+                <div id="gmail-priority-list">
+                  <div class="empty-state compact">
+                    <p>No analysed alerts yet. Select Analyse Gmail to begin.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div id="gmail-message-list">
+                <div class="empty-state compact">
+                  <p>Loading your emails...</p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                class="btn btn-secondary"
+                id="gmail-load-more"
+                style="display: none; margin-top: 16px; width: 100%;"
+              >
+                Load More Emails
+              </button>
             </section>
           </div>
         </section>
+        <!-- ============ END MAIL ============ -->
 
+        <!-- ============ VAULT ============ -->        
+            
         <!-- ============ VAULT ============ -->
         <section class="view" id="view-vault" data-view="vault">
           <div class="view-head">
