@@ -769,6 +769,32 @@ kbd + kbd { margin-left: 3px; }
 .source-strip .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 0 3px rgba(0, 185, 155, 0.15); }
 .source-strip.curated .live-dot { background: var(--gold); box-shadow: 0 0 0 3px rgba(245, 181, 68, 0.15); }
 
+.latest-post {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.latest-post-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-3);
+  font-size: 11px;
+}
+
+.latest-post strong {
+  color: var(--ink);
+  font-size: 13.5px;
+  line-height: 1.5;
+  font-weight: 600;
+}
+
 /* ---------- Panels ---------- */
 .panel {
   background: var(--surface);

@@ -74,14 +74,19 @@ from database import (
     get_summary,
     get_task,
     get_task_by_source,
+    get_latest_social_post,
     init_db,
+    invalidate_cache_prefix,
     is_database_configured,
     list_bookmarks,
     list_opportunities,
     list_resources,
+    list_social_alerts,
     list_summaries,
     list_tasks,
+    mark_social_alerts_read,
     new_id,
+    record_social_posts,
     search_all,
     set_cached_value,
     today,
@@ -92,7 +97,12 @@ from database import (
 )
 from news_fetcher import BRANCH_FILTERS, fetch_news
 from seed_data import seed_opportunities
-from social_fetcher import get_social_updates, social_status
+from social_fetcher import (
+    fetch_instagram_watch_updates,
+    get_social_updates,
+    instagram_watch_configured,
+    social_status,
+)
 
 
 logging.basicConfig(
@@ -543,6 +553,20 @@ def json_error(message: str, status: int = 400, **extra):
     return jsonify(payload), status
 
 
+def cron_request_authorized() -> bool:
+    """Verify Vercel's ``Authorization: Bearer <CRON_SECRET>`` header."""
+
+    secret = Config.CRON_SECRET
+    if not secret:
+        return False
+    header = request.headers.get("Authorization", "").strip()
+    if header.lower().startswith("bearer "):
+        header = header[7:].strip()
+    else:
+        header = request.headers.get("X-Cron-Secret", "").strip()
+    return bool(header and secrets.compare_digest(header, secret))
+
+
 def request_json() -> dict:
     data = request.get_json(silent=True)
     return data if isinstance(data, dict) else {}
@@ -777,6 +801,7 @@ def load_social(limit: int = 8, force_refresh: bool = False) -> dict:
         }
     payload["cached"] = False
     payload["updated_at"] = iso_now()
+    payload["latest"] = get_latest_social_post()
     set_cached_value(key, payload, ttl_minutes=Config.SOCIAL_CACHE_MINUTES)
     return payload
 
@@ -860,6 +885,7 @@ def load_campus(limit: int, force_refresh: bool = False, category: str = "", que
                 "profiles": social_payload.get("profiles", []),
                 "status": social_payload.get("status", {}),
                 "note": social_payload.get("note", ""),
+                "latest": social_payload.get("latest"),
             },
             "college_website_configured": bool(Config.COLLEGE_WEBSITE_URL),
             "college": {
@@ -1345,6 +1371,61 @@ def social_updates_api():
         return json_error("Social updates are temporarily unavailable.", 503)
 
 
+@app.route("/api/social/poll", methods=["GET", "POST"])
+def poll_social_watch():
+    """Check watched official accounts for new posts (Vercel Cron endpoint)."""
+
+    if not cron_request_authorized():
+        return json_error("Unauthorized.", 401)
+
+    if not instagram_watch_configured():
+        return jsonify(
+            {
+                "status": "skipped",
+                "reason": "not_configured",
+                "checked": 0,
+                "new_alerts": 0,
+                "latest": get_latest_social_post(),
+                "stats": get_stats(),
+            }
+        )
+
+    try:
+        posts = fetch_instagram_watch_updates(Config.INSTAGRAM_WATCH_LIMIT)
+    except Exception:
+        logger.exception("Watched social poll failed.")
+        return json_error("Watched social feed is temporarily unavailable.", 503)
+
+    new_alerts = record_social_posts(posts, seed_baseline=True)
+    # Refresh the cached campus/social payloads so the latest post is visible
+    # on the next request instead of waiting for the normal cache expiry.
+    invalidate_cache_prefix("social:")
+    invalidate_cache_prefix("campus:")
+
+    return jsonify(
+        {
+            "status": "ok",
+            "checked": len(posts),
+            "new_alerts": new_alerts,
+            "latest": get_latest_social_post(),
+            "stats": get_stats(),
+        }
+    )
+
+
+@app.post("/api/social-alerts/read")
+def social_alerts_read():
+    """Mark watched-post notifications as seen when the bell panel is opened."""
+
+    payload = request_json()
+    keys = payload.get("keys")
+    marked = mark_social_alerts_read(keys)
+    if marked:
+        invalidate_cache_prefix("social:")
+        invalidate_cache_prefix("campus:")
+    return jsonify({"marked": marked, "stats": get_stats()})
+
+
 @app.get("/api/opportunities")
 def opportunities_api():
     track = (request.args.get("track") or "All").strip()
@@ -1697,6 +1778,19 @@ def notifications():
     except Exception:
         app.logger.exception("Unable to load Gmail notifications")
 
+    # Include new posts detected by the watched-account poll. No provider or
+    # source name is rendered here; these are simply campus post notifications.
+    for alert in list_social_alerts(limit=5):
+        items.append({
+            "type": "social",
+            "title": alert.get("title") or "New campus post",
+            "subtitle": "New campus post · tap to view in MIT-WPU Updates",
+            "priority": "normal",
+            "item_key": alert.get("item_key"),
+            "link": alert.get("link"),
+        })
+
+    stats = get_stats()
     return jsonify({
         "count": len(items),
         "items": items,

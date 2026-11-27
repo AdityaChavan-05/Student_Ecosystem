@@ -15,6 +15,7 @@ async function fetchCampus(limit = 14, force = false) {
   state.campusCategories = data.categories || {};
   state.campusStatus = data.status || null;
   state.campusUpdated = data.updated_at || "";
+  if (data.social) state.social = { ...(state.social || {}), ...data.social };
   // Only a full fetch may satisfy later full-view loads; teasers stay partial.
   state.loaded.campus = limit >= 14;
   updateBadges();
@@ -523,6 +524,7 @@ function renderCampus() {
 
   renderCampusSource();
   renderCampusShortcuts();
+  renderLatestPost();
   renderCampusCategories();
   grid.classList.add("feed-grid");
 
@@ -576,6 +578,25 @@ function renderCampusShortcuts() {
       ${icon(link.platform === "linkedin" ? "users" : link.platform === "instagram" ? "campus" : "external")}
       ${esc(link.label)} ${icon("external")}
     </a>`).join("");
+}
+
+function renderLatestPost() {
+  const container = $("#campus-latest");
+  if (!container) return;
+  const latest = state.social?.latest;
+  if (!latest || !latest.title) {
+    container.hidden = true;
+    container.innerHTML = "";
+    return;
+  }
+  const published = latest.published_at || latest.first_seen_at;
+  container.hidden = false;
+  container.innerHTML = `
+    <div class="latest-post-top">
+      <span class="pill pill-mint">Latest post</span>
+      <span>${published ? esc(timeAgo(published)) : "Recently added"}</span>
+    </div>
+    <strong>${esc(truncate(latest.title, 220))}</strong>`;
 }
 
 function renderCampusCategories() {

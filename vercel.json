@@ -19,5 +19,11 @@
       "src": "/(.*)",
       "dest": "app.py"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/social/poll",
+      "schedule": "0 6 * * *"
+    }
   ]
 }

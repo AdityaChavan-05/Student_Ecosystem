@@ -54,16 +54,28 @@ AI_API_KEY=your-google-ai-studio-key
 GEMINI_MODEL=gemini-2.5-flash
 ```
 
-Without a key (or when the API errors, rate-limits or times out) the app transparently uses its deterministic extractive summarizer. The UI labels the mode honestly everywhere ("Gemini summary" vs "Smart local summary").
+Without a key (or when the API errors, rate-limits or times out) the app transparently uses its deterministic extractive summarizer. Provider and model details are intentionally kept out of the UI; summaries are shown with neutral labels.
 
 ### Optional: official LinkedIn / Instagram updates
 
-The College Hub supports profile shortcuts and, where you supply authorised credentials, real posts from official APIs. It does **not** scrape personal profiles or invent posts, dates or sources.
+The College Hub supports profile shortcuts and, where you supply authorised credentials, real posts from official APIs. It does **not** scrape personal profiles, read stories from accounts you do not manage, or invent posts, dates or sources.
 
 1. Add profile shortcuts without any API access using `SOCIAL_LINKS_JSON`, e.g.
    `[{"label":"MIT-WPU LinkedIn","url":"https://www.linkedin.com/school/.../","platform":"linkedin"}]`.
 2. For LinkedIn, use a Posts API token with `r_organization_social` plus an admin/content role on the organisation page. Set `LINKEDIN_AUTHOR_URNS` (`urn:li:organization:<id>` or just the numeric ID). Personal-member posts need the restricted `r_member_social` scope and are not enabled by default.
 3. For Instagram, use a **professional** account. With Instagram API set `INSTAGRAM_ACCESS_TOKEN` and `INSTAGRAM_USER_ID`; with the Facebook Graph API set `INSTAGRAM_API_HOST=graph.facebook.com` and a compatible token. `INSTAGRAM_DISCOVERY_USERNAMES` may read public professional accounts through Business Discovery, but only when `INSTAGRAM_API_HOST=graph.facebook.com` and the token has the Facebook Login permissions. It is skipped with an Instagram-Login token. Personal accounts are unsupported.
+
+#### Watching `@mitwpuofficial` for new posts
+
+`INSTAGRAM_DISCOVERY_USERNAMES` defaults to `mitwpuofficial`. The watcher uses Instagram Business Discovery, so it only works if the account is a public Business/Creator account and your Meta app has the required Advanced Access. To enable it:
+
+1. Create a Meta app and enable **Instagram API with Facebook Login**.
+2. Connect your own Instagram professional account (linked to a Facebook Page) through Facebook Login. Personal profiles cannot be used.
+3. Request `instagram_basic`, `instagram_manage_insights` and `pages_read_engagement`, and get Advanced Access from App Review for reading other professional accounts.
+4. In Vercel, set `INSTAGRAM_API_HOST=graph.facebook.com`, `INSTAGRAM_ACCESS_TOKEN`, `INSTAGRAM_USER_ID`, and a random `CRON_SECRET` (letters/numbers only). Redeploy so Vercel captures the new secrets.
+5. `vercel.json` schedules `GET /api/social/poll` once daily. Vercel authenticates it with `Authorization: Bearer <CRON_SECRET>`. On Hobby plans daily is the minimum interval; on Pro you can reduce the cron expression to poll more often.
+
+The first successful poll records existing posts as already seen. Later polls create an in-app notification only for genuinely new posts. The latest real post appears on the **MIT-WPU Updates** screen. Stories are not included, because Instagram does not expose other accounts' stories through Business Discovery.
 
 Keep tokens only in `.env`/host environment variables, never in frontend code, commits or screenshots. If a request fails, the app simply shows the configured shortcuts and a short "unavailable" note.
 
@@ -78,6 +90,7 @@ All settings live in `.env` (see `.env.example`) and are read by `config.py`.
 | `SECRET_KEY` | random per process locally | Flask session signing. A stable value is required in production; Gmail OAuth endpoints return `503` without it. |
 | `FLASK_DEBUG` | `false` | Flask debug mode. |
 | `PORT` | `5000` | Development server port. |
+| `CRON_SECRET` | empty | Shared secret Vercel sends to `/api/social/poll`. Required to enable the protected polling route. |
 | `DATABASE_PATH` | `instance/student_ecosystem.db` | SQLite file. Auto-falls back to a temp dir on read-only hosts such as Vercel. |
 | `AI_API_KEY` | empty | Google AI Studio key (`GEMINI_API_KEY` also accepted). |
 | `GEMINI_MODEL` | `gemini-2.5-flash` | Primary model. |
@@ -95,6 +108,8 @@ All settings live in `.env` (see `.env.example`) and are read by `config.py`.
 | `BRIEFING_CACHE_MINUTES` | `360` | Daily briefing cache TTL. |
 | `AI_CACHE_MINUTES` | `10080` | AI result cache TTL (7 days). |
 | `SOCIAL_CACHE_MINUTES` | `30` | Cache TTL for authorised social updates. |
+| `INSTAGRAM_DISCOVERY_USERNAMES` | `mitwpuofficial` | Public professional accounts watched for new posts. Empty disables watching. |
+| `INSTAGRAM_WATCH_LIMIT` | `5` | Number of recent watched posts checked per poll. |
 | `CORS_ORIGINS` | empty (same-origin) | Comma-separated allowed origins. Avoid `*` on a public deployment. |
 
 No secrets are hard-coded; the repository ships only safe defaults. `.env` is git-ignored. A key that was ever committed must be rotated, even if it was later removed from the current files.

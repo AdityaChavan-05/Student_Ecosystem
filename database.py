@@ -195,6 +195,18 @@ ON gmail_processed_messages(importance DESC);
 CREATE INDEX IF NOT EXISTS idx_gmail_alert_status
 ON gmail_processed_messages(alert_status);
 
+CREATE TABLE IF NOT EXISTS social_posts (
+    item_key      TEXT PRIMARY KEY,
+    title         TEXT NOT NULL DEFAULT '',
+    link          TEXT NOT NULL DEFAULT '',
+    published_at  TEXT NOT NULL DEFAULT '',
+    first_seen_at TEXT NOT NULL,
+    read_at       TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_social_posts_unread
+ON social_posts(read_at, first_seen_at DESC);
+
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(due_date);
 CREATE INDEX IF NOT EXISTS idx_summaries_created ON summaries(created_at);
@@ -299,6 +311,25 @@ def set_cached_value(cache_key: str, value, ttl_minutes: int = 30) -> bool:
     except Exception:
         logger.warning("Could not write the application cache.", exc_info=True)
         return False
+
+
+def invalidate_cache_prefix(prefix: str) -> int:
+    """Delete cache entries whose keys start with ``prefix``."""
+
+    prefix = (prefix or "").strip()
+    if not prefix:
+        return 0
+    init_db()
+    try:
+        with get_connection() as connection:
+            cursor = connection.execute(
+                "DELETE FROM app_cache WHERE cache_key LIKE ?",
+                (f"{prefix}%",),
+            )
+            return cursor.rowcount or 0
+    except Exception:
+        logger.warning("Could not invalidate the application cache.", exc_info=True)
+        return 0
 
 
 def purge_expired_cache() -> int:
@@ -584,6 +615,124 @@ def update_gmail_alert_status(message_id: str, status: str) -> bool:
         )
 
     return bool(cursor.rowcount)
+
+
+# ---------------------------------------------------------------------------
+# Watched social posts
+# ---------------------------------------------------------------------------
+
+def record_social_posts(items, *, seed_baseline: bool = False) -> int:
+    """Store seen posts and return how many produced a new alert.
+
+    The first successful poll seeds a baseline as already read, so an initial
+    deployment never floods the dashboard with older posts.
+    """
+
+    init_db()
+    now = utcnow()
+
+    with get_connection() as connection:
+        existing = connection.execute(
+            "SELECT COUNT(*) AS total FROM social_posts"
+        ).fetchone()["total"]
+        baseline = bool(seed_baseline and not existing)
+        new_alerts = 0
+
+        for item in items or []:
+            if not isinstance(item, dict):
+                continue
+            key = str(
+                item.get("id") or item.get("link") or item.get("title") or ""
+            ).strip()
+            if not key:
+                continue
+            cursor = connection.execute(
+                """
+                INSERT OR IGNORE INTO social_posts (
+                    item_key, title, link, published_at, first_seen_at, read_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    key,
+                    str(item.get("title") or "")[:500],
+                    str(item.get("link") or ""),
+                    str(item.get("published_at") or ""),
+                    now,
+                    now if baseline else "",
+                ),
+            )
+            if not baseline:
+                new_alerts += cursor.rowcount or 0
+
+    return new_alerts
+
+
+def list_social_alerts(limit: int = 10) -> list[dict]:
+    init_db()
+    limit = max(1, min(int(limit), 50))
+    with get_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT item_key, title, link, published_at, first_seen_at
+            FROM social_posts
+            WHERE read_at = ''
+            ORDER BY first_seen_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_latest_social_post() -> dict | None:
+    init_db()
+    with get_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT item_key, title, link, published_at, first_seen_at
+            FROM social_posts
+            ORDER BY published_at DESC, first_seen_at DESC
+            LIMIT 1
+            """
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def count_unread_social_alerts() -> int:
+    init_db()
+    with get_connection() as connection:
+        row = connection.execute(
+            "SELECT COUNT(*) AS total FROM social_posts WHERE read_at = ''"
+        ).fetchone()
+    return int(row["total"] or 0)
+
+
+def mark_social_alerts_read(item_keys=None) -> int:
+    init_db()
+    keys = []
+    if item_keys is not None:
+        for key in item_keys if isinstance(item_keys, (list, tuple, set)) else [item_keys]:
+            cleaned = str(key or "").strip()
+            if cleaned:
+                keys.append(cleaned)
+        if not keys:
+            return 0
+
+    with get_connection() as connection:
+        if keys:
+            placeholders = ",".join("?" for _ in keys)
+            cursor = connection.execute(
+                f"UPDATE social_posts SET read_at = ? "
+                f"WHERE read_at = '' AND item_key IN ({placeholders})",
+                (utcnow(), *keys),
+            )
+        else:
+            cursor = connection.execute(
+                "UPDATE social_posts SET read_at = ? WHERE read_at = ''",
+                (utcnow(),),
+            )
+    return cursor.rowcount or 0
 
 
 # ---------------------------------------------------------------------------
@@ -1112,6 +1261,7 @@ def get_stats() -> dict:
         "vault": vault,
         "starred": starred,
         "opportunities": count_opportunities(),
+        "social_alerts": count_unread_social_alerts(),
         "streak": min(7, tasks_done) or 1,
     }
 

@@ -295,22 +295,53 @@ def fetch_instagram_updates(limit: int = 8) -> list[dict]:
     except Exception:
         logger.info("Instagram media request failed for the connected account.")
 
-    # Business Discovery is a Facebook Login / Graph API feature. An
-    # Instagram Login token on graph.instagram.com cannot use it, so skip
-    # silently rather than reporting a misleading failure.
-    discovery_supported = "graph.facebook.com" in Config.INSTAGRAM_API_HOST.lower()
-    if Config.INSTAGRAM_DISCOVERY_USERNAMES and not discovery_supported:
-        logger.info(
-            "Skipping Instagram Business Discovery; set INSTAGRAM_API_HOST=graph.facebook.com to enable it."
-        )
+    # The watched-account fetch uses the same official Business Discovery
+    # endpoint. It is skipped on graph.instagram.com, where that field is
+    # unavailable, rather than reporting a misleading failure.
+    results.extend(fetch_instagram_watch_updates(limit))
 
-    for username in (
-        Config.INSTAGRAM_DISCOVERY_USERNAMES[:4] if discovery_supported else ()
-    ):
+    seen: set[str] = set()
+    unique = []
+    for item in results:
+        key = item.get("link") or item.get("id")
+        if key and key not in seen:
+            seen.add(key)
+            unique.append(item)
+    return unique[:limit]
+
+
+def instagram_watch_configured() -> bool:
+    """Return True when official Business Discovery can actually be used."""
+    return bool(
+        Config.INSTAGRAM_ACCESS_TOKEN
+        and Config.INSTAGRAM_USER_ID
+        and Config.INSTAGRAM_DISCOVERY_USERNAMES
+        and "graph.facebook.com" in Config.INSTAGRAM_API_HOST.lower()
+    )
+
+
+def fetch_instagram_watch_updates(limit: int | None = None) -> list[dict]:
+    """Read recent posts from watched professional accounts via Graph API.
+
+    This is the only source used for new-post detection. It never reads
+    stories, private profiles or unofficial endpoints. Without a Facebook
+    Login token it returns an empty list instead of a fabricated update.
+    """
+
+    if not instagram_watch_configured():
+        return []
+
+    count = max(1, min(int(limit or Config.INSTAGRAM_WATCH_LIMIT), 20))
+    base = _instagram_base()
+    results: list[dict] = []
+
+    for username in Config.INSTAGRAM_DISCOVERY_USERNAMES[:4]:
         fields = (
             "business_discovery.username("
             f"{quote(username, safe='')})"
-            "{{id,media{{id,caption,timestamp,permalink}}}}"
+            "{{id,media.limit("
+            f"{count}"
+            "){id,caption,timestamp,permalink}}}"
         )
         try:
             response = SESSION.get(
@@ -325,11 +356,15 @@ def fetch_instagram_updates(limit: int = 8) -> list[dict]:
             discovery = ((response.json() or {}).get("business_discovery") or {})
             media = discovery.get("media") or {}
             for item in media.get("data") or []:
-                update = _normalise_instagram_media(item, f"Instagram @{username}")
-                if update:
-                    results.append(update)
+                update = _normalise_instagram_media(item, "Official campus account")
+                if not update:
+                    continue
+                # Internal marker: only these posts create new-post alerts.
+                update["watch"] = True
+                update["watch_username"] = username
+                results.append(update)
         except Exception:
-            logger.info("Instagram Business Discovery failed for one configured account.")
+            logger.info("Official watched-account request failed; no posts were invented.")
 
     seen: set[str] = set()
     unique = []
@@ -338,7 +373,8 @@ def fetch_instagram_updates(limit: int = 8) -> list[dict]:
         if key and key not in seen:
             seen.add(key)
             unique.append(item)
-    return unique[:limit]
+    unique.sort(key=lambda item: item.get("published_at") or "", reverse=True)
+    return unique[:count]
 
 
 def get_social_updates(limit: int = 8) -> dict:

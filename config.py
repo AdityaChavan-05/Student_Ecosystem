@@ -171,6 +171,9 @@ class Config:
 
     # Server --------------------------------------------------------------
     PORT = _env_int("PORT", 5000)
+    # Vercel sends this value as ``Authorization: Bearer <secret>`` when it
+    # invokes a cron job. Keep it secret and set it in the host environment.
+    CRON_SECRET = os.getenv("CRON_SECRET", "").strip()
 
     # Social sources -------------------------------------------------------
     # Credentials are optional. Without them the UI shows official profile
@@ -192,11 +195,16 @@ class Config:
     INSTAGRAM_API_HOST = os.getenv(
         "INSTAGRAM_API_HOST", "graph.instagram.com"
     ).strip()
+    # MIT-WPU's verified account is the default watch target. Set the variable
+    # to an empty value to disable watching, or supply a different list.
     INSTAGRAM_DISCOVERY_USERNAMES = tuple(
         item.strip().lstrip("@")
-        for item in os.getenv("INSTAGRAM_DISCOVERY_USERNAMES", "").split(",")
+        for item in os.getenv(
+            "INSTAGRAM_DISCOVERY_USERNAMES", "mitwpuofficial"
+        ).split(",")
         if item.strip()
     )
+    INSTAGRAM_WATCH_LIMIT = max(1, _env_int("INSTAGRAM_WATCH_LIMIT", 5))
 
     # CORS ----------------------------------------------------------------
     # Same-origin is the default; the SPA does not need wildcard CORS. Add

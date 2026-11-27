@@ -125,6 +125,11 @@ def test_ui_hides_provider_and_raw_api_payloads():
     ):
         assert needle not in scripts, needle
 
+    # New-post alerts use a neutral label and a dedicated campus card.
+    assert "stats.social_alerts" in scripts
+    assert "Latest post" in scripts
+    assert 'id="campus-latest"' in template
+
 
 def test_profile_round_trip(client):
     response = client.patch(
@@ -262,6 +267,134 @@ def test_instagram_discovery_skipped_without_facebook_host(monkeypatch):
     assert social_fetcher.fetch_instagram_updates(limit=5) == []
     assert len(calls) == 1
     assert "business_discovery" not in calls[0][1]["fields"]
+
+
+def test_instagram_watch_uses_official_business_discovery(monkeypatch):
+    import social_fetcher
+
+    calls = []
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "business_discovery": {
+                    "media": {
+                        "data": [
+                            {
+                                "id": "watch-2",
+                                "caption": "Second campus post",
+                                "timestamp": "2026-11-28T12:00:00+00:00",
+                                "permalink": "https://www.instagram.com/p/second/",
+                            },
+                            {
+                                "id": "watch-1",
+                                "caption": "First campus post",
+                                "timestamp": "2026-11-27T12:00:00+00:00",
+                                "permalink": "https://www.instagram.com/p/first/",
+                            },
+                        ]
+                    }
+                }
+            }
+
+    def fake_get(url, params, timeout):
+        calls.append((url, params))
+        return Response()
+
+    monkeypatch.setattr(application.Config, "INSTAGRAM_ACCESS_TOKEN", "dummy-token")
+    monkeypatch.setattr(application.Config, "INSTAGRAM_USER_ID", "123")
+    monkeypatch.setattr(application.Config, "INSTAGRAM_API_HOST", "graph.facebook.com")
+    monkeypatch.setattr(
+        application.Config, "INSTAGRAM_DISCOVERY_USERNAMES", ("mitwpuofficial",)
+    )
+    monkeypatch.setattr(application.Config, "INSTAGRAM_WATCH_LIMIT", 2)
+    monkeypatch.setattr(social_fetcher.SESSION, "get", fake_get)
+
+    updates = social_fetcher.fetch_instagram_watch_updates(limit=2)
+
+    assert len(updates) == 2
+    assert updates[0]["title"] == "Second campus post"
+    assert updates[0]["watch"] is True
+    assert calls[0][0] == "https://graph.facebook.com/v26.0/123"
+    fields = calls[0][1]["fields"]
+    assert "business_discovery.username(mitwpuofficial)" in fields
+    assert "media.limit(2)" in fields
+    assert "stories" not in fields.lower()
+
+
+def test_social_poll_is_protected_and_alerts_only_on_new_posts(client, monkeypatch):
+    import database
+    import social_fetcher
+
+    secret = "test-cron-secret"
+    post_id = ["poll-existing"]
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "business_discovery": {
+                    "media": {
+                        "data": [
+                            {
+                                "id": post_id[0],
+                                "caption": "A real campus post",
+                                "timestamp": "2026-11-28T09:00:00+00:00",
+                                "permalink": "https://www.instagram.com/p/real-post/",
+                            }
+                        ]
+                    }
+                }
+            }
+
+    def fake_get(url, params, timeout):
+        return Response()
+
+    with database.get_connection() as connection:
+        connection.execute("DELETE FROM social_posts")
+
+    monkeypatch.setattr(application.Config, "CRON_SECRET", secret)
+    monkeypatch.setattr(application.Config, "INSTAGRAM_ACCESS_TOKEN", "dummy-token")
+    monkeypatch.setattr(application.Config, "INSTAGRAM_USER_ID", "123")
+    monkeypatch.setattr(application.Config, "INSTAGRAM_API_HOST", "graph.facebook.com")
+    monkeypatch.setattr(
+        application.Config, "INSTAGRAM_DISCOVERY_USERNAMES", ("mitwpuofficial",)
+    )
+    monkeypatch.setattr(social_fetcher.SESSION, "get", fake_get)
+
+    headers = {"Authorization": f"Bearer {secret}"}
+    try:
+        assert client.get("/api/social/poll").status_code == 401
+
+        baseline = client.get("/api/social/poll", headers=headers).get_json()
+        assert baseline["status"] == "ok"
+        assert baseline["checked"] == 1
+        assert baseline["new_alerts"] == 0
+        assert baseline["stats"]["social_alerts"] == 0
+
+        post_id[0] = "poll-new"
+        polled = client.get("/api/social/poll", headers=headers).get_json()
+        assert polled["new_alerts"] == 1
+        assert polled["stats"]["social_alerts"] == 1
+
+        notifications = client.get("/api/notifications").get_json()
+        social_items = [item for item in notifications["items"] if item["type"] == "social"]
+        assert len(social_items) == 1
+        assert social_items[0]["title"] == "A real campus post"
+        assert notifications["stats"]["social_alerts"] == 1
+
+        marked = client.post("/api/social-alerts/read", json={}).get_json()
+        assert marked["marked"] == 1
+        assert marked["stats"]["social_alerts"] == 0
+        assert client.get("/api/social/poll", headers=headers).get_json()["new_alerts"] == 0
+    finally:
+        with database.get_connection() as connection:
+            connection.execute("DELETE FROM social_posts")
 
 
 def test_branch_change_drops_stale_preferences(client):

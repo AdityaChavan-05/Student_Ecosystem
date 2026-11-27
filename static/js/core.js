@@ -517,7 +517,9 @@ function updateBadges() {
   setBadge("#nav-campus-badge", (state.campus || []).filter((item) => item.urgency === "high" || item.urgency === "urgent").length);
   setBadge("#nav-saved-badge", stats.bookmarks || 0);
   const dot = $("#notification-dot");
-  if (dot) dot.hidden = !(stats.overdue > 0 || stats.due_week > 0);
+  if (dot) {
+    dot.hidden = !(stats.overdue > 0 || stats.due_week > 0 || stats.social_alerts > 0);
+  }
 }
 
 function setActiveView(view) {
@@ -646,7 +648,7 @@ async function openNotificationPanel() {
         <div class="empty-state compact">
           <div class="empty-icon">${icon("check")}</div>
           <h3>All clear</h3>
-          <p>No pending deadlines or important Gmail alerts.</p>
+          <p>No pending deadlines, alerts or new posts.</p>
         </div>`;
       return;
     }
@@ -654,23 +656,28 @@ async function openNotificationPanel() {
     list.innerHTML = data.items
       .map((item) => {
         const isGmail = item.type === "gmail";
+        const isSocial = item.type === "social";
 
-        const days = isGmail ? null : daysUntil(item.due_date);
+        const days = isGmail || isSocial ? null : daysUntil(item.due_date);
 
-        const color = isGmail
-          ? "var(--warm)"
-          : days !== null && days < 0
-            ? "var(--danger)"
-            : days !== null && days <= 2
-              ? "var(--warm)"
-              : "var(--mint)";
+        const color = isSocial
+          ? "var(--primary)"
+          : isGmail
+            ? "var(--warm)"
+            : days !== null && days < 0
+              ? "var(--danger)"
+              : days !== null && days <= 2
+                ? "var(--warm)"
+                : "var(--mint)";
+
+        const href = isSocial ? "#campus" : isGmail ? "#mail" : "#tasks";
 
         return `
-          <a class="notification-item" href="${isGmail ? "#mail" : "#tasks"}">
+          <a class="notification-item" href="${href}">
             <span class="dot" style="background:${color}"></span>
             <div style="min-width:0">
               <strong>
-                ${isGmail ? "📧 " : ""}
+                ${isGmail ? "📧 " : isSocial ? "📌 " : ""}
                 ${esc(item.title)}
               </strong>
               <small>
@@ -681,6 +688,16 @@ async function openNotificationPanel() {
           </a>`;
       })
       .join("");
+
+    if (data.items.some((item) => item.type === "social")) {
+      try {
+        const result = await api("/api/social-alerts/read", { method: "POST", body: {} });
+        if (result.stats) state.stats = result.stats;
+        updateBadges();
+      } catch {
+        /* Marking alerts read is a nicety; the panel still works. */
+      }
+    }
 
   } catch (error) {
     if (list) {
