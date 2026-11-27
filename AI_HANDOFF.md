@@ -173,7 +173,7 @@ Local tests passed. **Deployment was not verified** because no Vercel CLI, deplo
 - `routes` sends `/static/(.*)` to the static build and all other paths to `app.py`.
 - `config.py` falls back to writable `/tmp` paths for SQLite and the Gmail token when the local `instance/` directory is read-only.
 - Set a stable session secret in the deployment environment; otherwise Gmail OAuth remains disabled.
-- Static asset URLs include a cache-busting `?v=4` query in `templates/index.html`.
+- Static asset URLs include a cache-busting `?v=5` query in `templates/index.html`; bump this whenever bundled JS/CSS changes.
 
 ## 18. Environment variable names only (never values)
 
