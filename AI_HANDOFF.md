@@ -42,7 +42,7 @@ Student_Ecosystem/
 
 ## 4. Files modified so far
 
-Latest code commit at the time of this report: `81e4ad4` — `Hide AI provider and feed source details from UI`.
+Latest code commit at the time of this report: `5d9a09d` — `Hide AI provider and feed source details from UI` (rebased onto the newer remote `main`).
 
 Files changed in that commit:
 
@@ -82,6 +82,7 @@ Earlier commits already on `main`:
 15. Replaced all visible provider/model labels (Gemini, model name, RSS source, AI/local brief badges) with neutral labels such as "Smart summaries" and "Briefing".
 16. Hid article and campus source names, sender addresses and external "original source" links from the rendered cards. The underlying feeds and summaries still work.
 17. Added a regression test that scans the template and JavaScript bundles for provider/source disclosure strings and raw API payload links.
+18. After rebasing onto a newer remote commit, cleared a non-placeholder `AI_API_KEY` value that had been re-added to the tracked `.env.example`; the template is empty again and the value was never displayed or copied.
 
 ## 6. Bugs identified
 
@@ -89,7 +90,7 @@ Earlier commits already on `main`:
 - **Error B:** `NEWS_PROMPT.format(articles=...)` interpreted `{ "articles": ... }` as a format field, producing `KeyError: '\n  "articles"'`.
 - **Error C:** `BRIEFING_PROMPT.format(context=...)` interpreted `{ "headline": ... }` as a format field, producing `KeyError: '"headline"'`.
 - **Error D:** Google News RSS returned HTTP 429; the old code had no throttling status, no bounded retry, and cache keys varied by `limit`, causing repeated upstream fetches.
-- **Security issue:** an uncommitted `.env.example` contained a secret-looking AI key. It was replaced with an empty placeholder and was not committed. If a key was ever committed in Git history (`f9f79c3`), it must be rotated.
+- **Security issue:** an uncommitted `.env.example` contained a secret-looking AI key. It was replaced with an empty placeholder and was not committed. If a key was ever committed in Git history (`f9f79c3`, and later remote commit `88f5da8`), it must be rotated.
 - **UI disclosure issue:** the Settings screen linked directly to raw `/api/bootstrap` and `/api/health` payloads, and multiple views rendered provider/model/feed-source details such as Gemini model names, "Live RSS briefing", source names and sender addresses.
 
 ## 7. Bugs fixed
@@ -141,7 +142,7 @@ Automated checks covered:
 
 ## 12. Latest commit hash
 
-`81e4ad4` — UI disclosure cleanup. A separate checkpoint commit containing this report follows.
+`5d9a09d` — UI disclosure cleanup. Checkpoint commits containing this report follow.
 
 ## 13. Working tree state
 
