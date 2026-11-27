@@ -795,6 +795,16 @@ kbd + kbd { margin-left: 3px; }
   font-weight: 600;
 }
 
+.latest-post.placeholder {
+  border-style: dashed;
+  background: var(--surface-2);
+}
+
+.latest-post.placeholder strong {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+
 /* ---------- Panels ---------- */
 .panel {
   background: var(--surface);

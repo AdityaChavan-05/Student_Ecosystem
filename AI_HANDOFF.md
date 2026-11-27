@@ -197,7 +197,8 @@ Local tests passed. **Deployment was not verified** because no Vercel CLI, deplo
 - `routes` sends `/static/(.*)` to the static build and all other paths to `app.py`.
 - `config.py` falls back to writable `/tmp` paths for SQLite and the Gmail token when the local `instance/` directory is read-only.
 - Set a stable session secret in the deployment environment; otherwise Gmail OAuth remains disabled.
-- Static asset URLs include a cache-busting `?v=6` query in `templates/index.html`; bump this whenever bundled JS/CSS changes.
+- Static asset URLs include a cache-busting `?v=7` query in `templates/index.html`; bump this whenever bundled JS/CSS changes.
+- The latest-post card shows a neutral placeholder in MIT-WPU Updates until a watched post has been recorded.
 - `crons` schedules `GET /api/social/poll` once daily at `0 6 * * *`; Hobby plans reject more frequent expressions.
 - `CRON_SECRET` must be set as a Vercel environment variable before the cron can call the protected poll route; redeploy after changing it.
 

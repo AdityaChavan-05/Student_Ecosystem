@@ -584,13 +584,21 @@ function renderLatestPost() {
   const container = $("#campus-latest");
   if (!container) return;
   const latest = state.social?.latest;
+
+  container.hidden = false;
+  container.classList.toggle("placeholder", !latest || !latest.title);
+
   if (!latest || !latest.title) {
-    container.hidden = true;
-    container.innerHTML = "";
+    container.innerHTML = `
+      <div class="latest-post-top">
+        <span class="pill pill-outline">Latest post</span>
+        <span>Not available yet</span>
+      </div>
+      <strong>New campus posts will appear here once official updates are connected.</strong>`;
     return;
   }
+
   const published = latest.published_at || latest.first_seen_at;
-  container.hidden = false;
   container.innerHTML = `
     <div class="latest-post-top">
       <span class="pill pill-mint">Latest post</span>

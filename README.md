@@ -75,7 +75,7 @@ The College Hub supports profile shortcuts and, where you supply authorised cred
 4. In Vercel, set `INSTAGRAM_API_HOST=graph.facebook.com`, `INSTAGRAM_ACCESS_TOKEN`, `INSTAGRAM_USER_ID`, and a random `CRON_SECRET` (letters/numbers only). Redeploy so Vercel captures the new secrets.
 5. `vercel.json` schedules `GET /api/social/poll` once daily. Vercel authenticates it with `Authorization: Bearer <CRON_SECRET>`. On Hobby plans daily is the minimum interval; on Pro you can reduce the cron expression to poll more often.
 
-The first successful poll records existing posts as already seen. Later polls create an in-app notification only for genuinely new posts. The latest real post appears on the **MIT-WPU Updates** screen. Stories are not included, because Instagram does not expose other accounts' stories through Business Discovery.
+The first successful poll records existing posts as already seen. Later polls create an in-app notification only for genuinely new posts. The latest real post appears on the **MIT-WPU Updates** screen, directly below the profile shortcuts and above the search bar; until then that area shows a neutral placeholder. Stories are not included, because Instagram does not expose other accounts' stories through Business Discovery.
 
 Keep tokens only in `.env`/host environment variables, never in frontend code, commits or screenshots. If a request fails, the app simply shows the configured shortcuts and a short "unavailable" note.
 

@@ -128,6 +128,7 @@ def test_ui_hides_provider_and_raw_api_payloads():
     # New-post alerts use a neutral label and a dedicated campus card.
     assert "stats.social_alerts" in scripts
     assert "Latest post" in scripts
+    assert "New campus posts will appear here" in scripts
     assert 'id="campus-latest"' in template
 
 
