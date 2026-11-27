@@ -168,7 +168,7 @@ function renderOverview() {
   }
   const mode = $("#hero-mode");
   if (mode) {
-    mode.textContent = state.features.ai ? "Gemini summaries on" : "Smart local summaries";
+    mode.textContent = "Smart summaries on";
   }
   updateClockUI();
   renderOverviewStats();
@@ -304,7 +304,7 @@ function renderBriefing() {
     </div>
     <div class="briefing-mode">
       ${icon("sparkles")}
-      <span>${briefing.mode === "ai" ? "Written by Gemini from your live context" : "Generated locally from your live context"}</span>
+      <span>Built from your live context</span>
       <span>·</span>
       <span>${esc(briefing.generated_at ? timeAgo(briefing.generated_at) : "just now")}</span>
     </div>`;
@@ -347,7 +347,7 @@ function renderLineup() {
       icon: "news",
       tone: "mint",
       title: news.title,
-      meta: `${news.source}${news.published_at ? ` · ${timeAgo(news.published_at)}` : ""}`,
+      meta: `${news.published_at ? timeAgo(news.published_at) : "Briefing ready"}`,
     });
   } else if (task) {
     items.push({
@@ -546,18 +546,15 @@ function renderCampusSource() {
   if (!container) return;
   const status = state.campusStatus || {};
   const live = status.mode === "live";
-  const configured = safeUrl(state.college?.url);
   container.className = `source-strip ${live ? "" : "curated"}`;
   container.innerHTML = `
     <span class="live-dot"></span>
-    <strong>${live ? "Live campus scan" : "Curated campus guide"}</strong>
+    <strong>${live ? "Campus updates" : "Campus guide"}</strong>
     <span class="sep">·</span>
-    <span>${live ? `${status.live_count || 0} live links` : "Official site not reachable from this environment"}</span>
-    <span class="sep">·</span>
-    ${configured ? `<a href="${esc(configured)}" target="_blank" rel="noopener noreferrer">${esc(configured.replace(/^https?:\/\//, ""))}</a>` : "<span>No college URL configured</span>"}
+    <span>${live ? `${status.live_count || 0} updates` : "Ready to browse"}</span>
     <span class="spacer"></span>
     <span>${state.campusUpdated ? `Updated ${timeAgo(state.campusUpdated)}` : "Just now"}</span>
-    ${state.features.ai ? `<span class="pill pill-primary">${icon("sparkles")}AI enriched</span>` : `<span class="pill pill-soft">Local summaries</span>`}`;
+    <span class="pill pill-soft">Smart summaries</span>`;
 }
 
 function renderCampusShortcuts() {
@@ -619,9 +616,8 @@ function renderCampusCategories() {
 function campusCard(item) {
   const saved = isSaved("campus", item.id);
   const deadline = deadlineLabel(item.deadline);
-  const tldr = item.tldr || truncate(item.description, 240) || "Open the official link for full details.";
+  const tldr = item.tldr || truncate(item.description, 240) || "More details are available in the briefing.";
   const actions = (item.what_to_do || []).slice(0, 3);
-  const url = safeUrl(item.link);
   const published = item.published_at ? timeAgo(item.published_at) : "";
   return `
     <article class="feed-card" data-id="${esc(item.id)}">
@@ -633,9 +629,7 @@ function campusCard(item) {
         <span class="spacer"></span>
         <button class="icon-action ${saved ? "active" : ""}" type="button" aria-label="${saved ? "Remove bookmark" : "Save update"}" data-action="toggle-save" data-kind="campus" data-id="${esc(item.id)}">${icon("bookmark")}</button>
       </div>
-      <h3 class="card-title">
-        ${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(item.title)}</a>` : esc(item.title)}
-      </h3>
+      <h3 class="card-title">${esc(item.title)}</h3>
       <p class="card-desc">${esc(truncate(item.description, 220))}</p>
       <div class="ai-block">
         <div class="ai-label">${icon("sparkles")}TL;DR</div>
@@ -643,10 +637,9 @@ function campusCard(item) {
         ${actions.length ? `<div class="ai-actions-label">What to do</div><ul class="ai-actions">${actions.map((action) => `<li>${esc(action)}</li>`).join("")}</ul>` : ""}
       </div>
       <div class="card-foot">
-        <span class="card-meta">${item.curated ? icon("book") : item.origin ? icon("users") : icon("campus")}<span>${esc(item.curated ? "Curated guide" : item.source || "MIT-WPU official")}${published ? ` · ${published}` : ""}</span></span>
+        <span class="card-meta">${item.curated ? icon("book") : item.origin ? icon("users") : icon("campus")}<span>${esc(item.curated ? "Campus guide" : "Campus update")}${published ? ` · ${published}` : ""}</span></span>
         <span class="spacer"></span>
         <button class="icon-action" type="button" title="Add to tasks" aria-label="Add to tasks" data-action="task-from" data-kind="campus" data-id="${esc(item.id)}">${icon("plus")}</button>
-        ${url ? `<a class="icon-action" href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="Open official source" aria-label="Open official source">${icon("external")}</a>` : ""}
       </div>
     </article>`;
 }
@@ -836,7 +829,7 @@ function renderNews() {
   const query = state.filters.newsQuery.trim().toLowerCase();
   const topic = state.filters.newsTopic;
   const filtered = (state.news || []).filter((item) => {
-    const haystack = `${item.title} ${item.description} ${item.source} ${(item.tags || []).join(" ")} ${(item.bullets || []).join(" ")}`.toLowerCase();
+    const haystack = `${item.title} ${item.description} ${(item.tags || []).join(" ")} ${(item.bullets || []).join(" ")}`.toLowerCase();
     const matchesTopic = topic === "All" || haystack.includes(topic.toLowerCase());
     return matchesTopic && (!query || haystack.includes(query));
   });
@@ -866,15 +859,12 @@ function renderNewsSource() {
   const container = $("#news-source");
   if (!container) return;
   const meta = state.newsMeta || {};
-  const fallback = (state.news || []).some((item) => item.fallback);
-  container.className = `source-strip ${fallback ? "curated" : ""}`;
+  container.className = "source-strip";
   container.innerHTML = `
     <span class="live-dot"></span>
-    <strong>${fallback ? "Curated reading list" : "Live RSS briefing"}</strong>
+    <strong>Briefing feed</strong>
     <span class="sep">·</span>
     <span>${esc(state.profile.branch)}</span>
-    <span class="sep">·</span>
-    <span>${meta.ai_mode === "ai" ? `Summarized with ${esc(state.features.model || "Gemini")}` : "Local extractive summaries"}</span>
     <span class="spacer"></span>
     <span>${meta.updated_at ? `Updated ${timeAgo(meta.updated_at)}` : "Just now"}</span>
   `;
@@ -882,7 +872,6 @@ function renderNewsSource() {
 
 function newsCard(item) {
   const saved = isSaved("news", item.id);
-  const url = safeUrl(item.link);
   const tldr = item.tldr || "";
   const takeawayKey = (value) => String(value || "").toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
   const tldrKey = takeawayKey(tldr);
@@ -898,22 +887,19 @@ function newsCard(item) {
   return `
     <article class="news-card" data-id="${esc(item.id)}">
       <div class="news-meta">
-        <span class="news-source">${esc(item.source || "Engineering publisher")}</span>
-        <span class="news-date">${item.published_at ? esc(timeAgo(item.published_at)) : ""}</span>
-        ${item.fallback ? `<span class="pill pill-gold">${icon("book")}Curated</span>` : ""}
+        <span class="news-date">${item.published_at ? esc(timeAgo(item.published_at)) : "Briefing"}</span>
         ${!tldr && !bullets.length ? `<span class="pill pill-soft">Headline only</span>` : ""}
         <span class="spacer"></span>
         <button class="icon-action ${saved ? "active" : ""}" type="button" aria-label="${saved ? "Remove bookmark" : "Save briefing"}" data-action="toggle-save" data-kind="news" data-id="${esc(item.id)}">${icon("bookmark")}</button>
       </div>
-      <h3 class="news-title">${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(item.title)}</a>` : esc(item.title)}</h3>
+      <h3 class="news-title">${esc(item.title)}</h3>
       ${tldr ? `<p class="news-tldr">${esc(tldr)}</p>` : ""}
       ${bullets.length ? `<ul class="news-takeaways">${bullets.map((bullet) => `<li>${esc(bullet)}</li>`).join("")}</ul>` : ""}
       <div class="news-tags">${(item.tags || []).slice(0, 4).map((tag) => `<span class="news-tag">${esc(tag)}</span>`).join("")}</div>
       <div class="news-foot">
-        <span class="mode-badge">${icon(item.summary_mode === "ai" ? "sparkles" : "bolt")}${item.summary_mode === "ai" ? "AI brief" : "Local brief"}</span>
+        <span class="mode-badge">${icon("news")}Briefing</span>
         <span class="spacer"></span>
         <button class="icon-action" type="button" title="Save to reading list" aria-label="Save to reading list" data-action="task-from" data-kind="news" data-id="${esc(item.id)}">${icon("tasks")}</button>
-        ${url ? `<a class="icon-action" href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="Read original" aria-label="Read original">${icon("external")}</a>` : ""}
       </div>
     </article>`;
 }

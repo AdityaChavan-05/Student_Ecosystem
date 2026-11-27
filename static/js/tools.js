@@ -545,7 +545,6 @@ function renderMailHistory() {
   container.innerHTML = summaries.map((summary) => `
     <article class="history-item">
       <h4>${esc(summary.subject || "Untitled notice")}</h4>
-      <p>${esc(summary.sender || "Unknown sender")}</p>
       <small>${esc(summary.created_at || "")}</small>
     </article>
   `).join("");
@@ -715,7 +714,6 @@ async function loadGmailPriority() {
             </span>
           </div>
 
-          <p>${esc(message.sender || "Unknown sender")}</p>
           <p>${esc(message.tldr || "No summary available.")}</p>
 
           <p><strong>Importance:</strong> ${Number(message.importance)}/100</p>
@@ -801,7 +799,6 @@ function renderSummaryResult(summary) {
   const deadlines = summary.deadlines || [];
   const actions = summary.action_items || [];
   const tags = summary.tags || [];
-  const modeLabel = summary.mode === "ai" ? "Gemini summary" : "Smart local summary";
 
   container.innerHTML = `
     <article class="summary-result-card">
@@ -809,7 +806,6 @@ function renderSummaryResult(summary) {
         <h3>${esc(summary.subject || "Notice summary")}</h3>
         <span class="pill pill-primary">${esc(summary.category || "General")}</span>
         <span class="pill ${urgencyClass(summary.urgency)}">${esc(urgencyLabel(summary.urgency))}</span>
-        <span class="mode-badge">${icon(summary.mode === "ai" ? "sparkles" : "bolt")}${esc(modeLabel)}</span>
         <span class="spacer"></span>
         <span class="muted" style="font-size:10px">${esc(fmtDateTime(summary.created_at || new Date().toISOString()))}</span>
       </div>
@@ -918,10 +914,7 @@ async function handleMailSubmit(event) {
       updateBadges();
       toast("Notice summarized and the top action was added to your tasks.", { title: "Done" });
     } else {
-      toast(
-        summary.mode === "ai" ? "Gemini extracted the key details." : "Generated with the local fallback summarizer.",
-        { title: "Notice summarized" }
-      );
+      toast("Key details extracted.", { title: "Notice summarized" });
     }
     const fileInput = $("#mail-file");
     if (fileInput) fileInput.value = "";
@@ -1012,10 +1005,9 @@ function renderSettings() {
   if (status) {
     const stats = state.stats || {};
     status.innerHTML = `
-      <div class="status-row">${icon("sparkles")}<span>AI summaries</span><strong class="${state.features.ai ? "ok" : "warn"}">${state.features.ai ? "Gemini live" : "Local fallback"}</strong></div>
-      <div class="status-row">${icon("layers")}<span>Model</span><strong class="${state.features.ai ? "ok" : "off"}">${esc(state.features.model || "Not configured")}</strong></div>
-      <div class="status-row">${icon("campus")}<span>Campus feed</span><strong class="${state.campusStatus?.mode === "live" ? "ok" : "warn"}">${state.campusStatus?.mode === "live" ? "Live scan" : "Curated guide"}</strong></div>
-      <div class="status-row">${icon("users")}<span>Social APIs</span><strong class="${state.social?.status?.linkedin || state.social?.status?.instagram ? "ok" : "off"}">${state.social?.status?.linkedin || state.social?.status?.instagram ? "Connected" : "Profile links only"}</strong></div>
+      <div class="status-row">${icon("sparkles")}<span>Smart summaries</span><strong class="ok">Ready</strong></div>
+      <div class="status-row">${icon("campus")}<span>Campus updates</span><strong class="ok">Ready</strong></div>
+      <div class="status-row">${icon("users")}<span>Connections</span><strong class="ok">Ready</strong></div>
       <div class="status-row">${icon("book")}<span>Local database</span><strong class="ok">SQLite ready</strong></div>
       <div class="status-row">${icon("tasks")}<span>Tasks &amp; summaries</span><strong class="ok">${stats.tasks_open || 0} open · ${stats.summaries || 0} saved</strong></div>
       <div class="status-row">${icon("bookmark")}<span>Bookmarks</span><strong class="ok">${stats.bookmarks || 0} saved</strong></div>`;

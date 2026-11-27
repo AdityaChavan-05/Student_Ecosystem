@@ -47,7 +47,7 @@ const state = {
     city: "Pune, Maharashtra",
     url: "",
   },
-  features: { ai: false, ai_mode: "heuristic", model: "", campus_live: false },
+  features: { ai: false, campus_live: false },
   stats: {},
   today: "",
   campus: [],
@@ -388,7 +388,7 @@ async function toggleSave(kind, id) {
     kind === "opportunity"
       ? `${item.organizer || item.track || "Opportunity"}${item.deadline ? ` · ${fmtDate(item.deadline)}` : ""}`
       : kind === "news"
-      ? `${item.source || "Briefing"}${item.published_at ? ` · ${timeAgo(item.published_at)}` : ""}`
+      ? `${item.published_at ? timeAgo(item.published_at) : "Briefing"}`
       : `${item.category || "Campus"}${item.deadline ? ` · ${fmtDate(item.deadline)}` : ""}`;
 
   try {
@@ -496,11 +496,8 @@ function updateProfileUI() {
   const aiPill = $("#ai-status-pill");
   const aiText = $("#ai-status-text");
   if (aiPill && aiText) {
-    const aiOn = Boolean(state.features.ai);
-    aiPill.classList.toggle("fallback", !aiOn);
-    aiText.textContent = aiOn
-      ? `Gemini · ${state.features.model || "2.5 Flash"}`
-      : "Smart local fallback";
+    aiPill.classList.remove("fallback");
+    aiText.textContent = "Smart summaries on";
   }
 }
 

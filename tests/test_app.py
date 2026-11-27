@@ -51,6 +51,7 @@ def test_health(client):
     assert data["status"] == "ok"
     assert data["database"] == "sqlite"
     assert data["ai"] in {"fallback", "configured"}
+    assert "model" not in data
 
 
 def test_bootstrap(client):
@@ -59,7 +60,9 @@ def test_bootstrap(client):
     data = response.get_json()
     assert data["profile"]["name"]
     assert "Computer Science" in data["branches"]
-    assert set(data["features"]) >= {"ai", "ai_mode", "model", "social"}
+    assert set(data["features"]) >= {"ai", "social"}
+    assert "model" not in data["features"]
+    assert "ai_mode" not in data["features"]
     assert "linkedin" in data["features"]["social"]
     assert isinstance(data["features"]["social"]["links"], list)
     assert data["topics"]["Computer Science"]
@@ -90,6 +93,37 @@ def test_vercel_builds_include_static_assets():
         build.get("src") == "static/**" and build.get("use") == "@vercel/static"
         for build in vercel["builds"]
     )
+
+
+def test_ui_hides_provider_and_raw_api_payloads():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "templates" / "index.html").read_text(encoding="utf-8")
+    scripts = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted((root / "static" / "js").glob("*.js"))
+    )
+
+    # Raw diagnostic payloads must not be linked from the settings screen.
+    assert "/api/bootstrap" not in template
+    assert "/api/health" not in template
+
+    # No provider, model or feed-source details may be rendered in the UI.
+    for needle in (
+        "Gemini",
+        "gemini-",
+        "Summarized with",
+        "Live RSS briefing",
+        "Written by Gemini",
+        "Open official source",
+        "Read original",
+        "MIT-WPU official",
+        "state.features.model",
+        "state.features.ai_mode",
+        "item.source",
+        "summary.sender",
+        "message.sender",
+    ):
+        assert needle not in scripts, needle
 
 
 def test_profile_round_trip(client):

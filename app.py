@@ -1191,7 +1191,6 @@ def health():
             "timestamp": iso_now(),
             "database": "sqlite" if is_database_configured() else "unavailable",
             "ai": "configured" if ai_available() else "fallback",
-            "model": Config.GEMINI_MODEL,
         }
     )
 
@@ -1216,8 +1215,6 @@ def bootstrap():
             },
             "features": {
                 "ai": ai_available(),
-                "ai_mode": "gemini" if ai_available() else "heuristic",
-                "model": Config.GEMINI_MODEL,
                 "campus_live": bool(Config.COLLEGE_WEBSITE_URL),
                 "social": social_status(),
             },
