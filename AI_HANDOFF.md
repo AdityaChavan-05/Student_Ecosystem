@@ -30,7 +30,7 @@ Student_Ecosystem/
   templates/index.html
   static/js/{core,views,tools,app}.js
   static/css/app.css
-  tests/test_app.py      # 37 passing regression tests
+  tests/test_app.py      # 38 passing regression tests
   requirements.txt
   pyproject.toml
   vercel.json
@@ -42,21 +42,22 @@ Student_Ecosystem/
 
 ## 4. Files modified so far
 
-Latest code commit at the time of this report: `3cfffcc` — `Fix AI prompt formatting and improve news feed reliability`.
+Latest code commit at the time of this report: `81e4ad4` — `Hide AI provider and feed source details from UI`.
 
 Files changed in that commit:
 
-- `.env.example`
-- `README.md`
-- `ai_summarizer.py`
 - `app.py`
-- `config.py`
-- `database.py`
-- `news_fetcher.py`
+- `static/js/core.js`
+- `static/js/tools.js`
+- `static/js/views.js`
+- `templates/index.html`
 - `tests/test_app.py`
 
-Earlier commits already on `main` and pushed to `origin/main`:
+Previous code commit: `3cfffcc` — `Fix AI prompt formatting and improve news feed reliability`, which changed `.env.example`, `README.md`, `ai_summarizer.py`, `app.py`, `config.py`, `database.py`, `news_fetcher.py` and `tests/test_app.py`.
 
+Earlier commits already on `main`:
+
+- `07541e0` — checkpoint handoff report
 - `6c0b14b` — deployment, OAuth and preference review fixes
 - `210ab5f` — documentation and regression tests
 - `d0336ac` — Mail Summarizer and hub UI restoration
@@ -76,6 +77,11 @@ Earlier commits already on `main` and pushed to `origin/main`:
 10. Briefing refresh now reuses the shared news cache instead of forcing a second upstream RSS fetch.
 11. Added new environment variables to `.env.example` and `README.md`.
 12. Removed a secret-looking value that had been placed in the uncommitted `.env.example`; the tracked template now has an empty `AI_API_KEY`.
+13. Removed the Settings links that opened raw `/api/bootstrap` and `/api/health` JSON payloads in the browser.
+14. Removed the configured model name from `/api/bootstrap` and `/api/health`; no deployment-side model identifier is sent to the browser.
+15. Replaced all visible provider/model labels (Gemini, model name, RSS source, AI/local brief badges) with neutral labels such as "Smart summaries" and "Briefing".
+16. Hid article and campus source names, sender addresses and external "original source" links from the rendered cards. The underlying feeds and summaries still work.
+17. Added a regression test that scans the template and JavaScript bundles for provider/source disclosure strings and raw API payload links.
 
 ## 6. Bugs identified
 
@@ -84,10 +90,11 @@ Earlier commits already on `main` and pushed to `origin/main`:
 - **Error C:** `BRIEFING_PROMPT.format(context=...)` interpreted `{ "headline": ... }` as a format field, producing `KeyError: '"headline"'`.
 - **Error D:** Google News RSS returned HTTP 429; the old code had no throttling status, no bounded retry, and cache keys varied by `limit`, causing repeated upstream fetches.
 - **Security issue:** an uncommitted `.env.example` contained a secret-looking AI key. It was replaced with an empty placeholder and was not committed. If a key was ever committed in Git history (`f9f79c3`), it must be rotated.
+- **UI disclosure issue:** the Settings screen linked directly to raw `/api/bootstrap` and `/api/health` payloads, and multiple views rendered provider/model/feed-source details such as Gemini model names, "Live RSS briefing", source names and sender addresses.
 
 ## 7. Bugs fixed
 
-All three prompt-formatting crashes are fixed and covered by tests that assert JSON braces remain intact. HTTP 429 is now handled with a single bounded retry, throttling metadata, cached-feed fallback and an honest API `notice`. No articles, dates or sources are fabricated.
+All three prompt-formatting crashes are fixed and covered by tests that assert JSON braces remain intact. HTTP 429 is now handled with a single bounded retry, throttling metadata, cached-feed fallback and an honest API `notice`. No articles, dates or sources are fabricated. The UI no longer exposes API payload links, provider/model names, feed-source labels, sender addresses or original-source links.
 
 ## 8. Tests performed
 
@@ -110,12 +117,13 @@ Automated checks covered:
 - Cached query search using the full feed.
 - Stale cached feed preferred over fallback-only throttled results.
 - Static asset endpoints and SPA fallback routes.
+- UI regression scan for provider/model/source disclosure strings and raw API payload links.
 - Secret-pattern scan of tracked text files.
 
 ## 9. Test results
 
 - `python -m py_compile`: passed.
-- `python -m pytest`: **37 passed** in about 11 seconds.
+- `python -m pytest`: **38 passed** in about 11 seconds.
 - `git diff --check`: passed (only a harmless LF→CRLF normalization warning for `.env.example`).
 - Secret scan: no hardcoded key values in the working tree; only the placeholder in `README.md` and empty environment entries in `.env.example`.
 
@@ -133,11 +141,11 @@ Automated checks covered:
 
 ## 12. Latest commit hash
 
-`3cfffcc` — code fixes. A separate checkpoint commit containing this report follows.
+`81e4ad4` — UI disclosure cleanup. A separate checkpoint commit containing this report follows.
 
 ## 13. Working tree state
 
-Clean at the time of writing, immediately after the code commit and before creating `AI_HANDOFF.md`.
+Clean at the time of writing, immediately after the code commit and before updating `AI_HANDOFF.md`.
 
 ## 14. Remaining tasks
 
@@ -187,4 +195,5 @@ Local tests passed. **Deployment was not verified** because no Vercel CLI, deplo
 - Do not commit `.env`, `credentials.json`, token files or any real key value.
 - Do not force-push, rewrite shared history or delete branches.
 - Do not redesign the frontend or remove existing features to make backend errors disappear.
+- Do not reintroduce provider/model labels, raw API payload links, source names, sender addresses or original-source links into the UI.
 - Do not claim Vercel deployment was verified unless an actual deployment/log check was performed.
