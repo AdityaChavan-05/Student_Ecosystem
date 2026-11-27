@@ -11,14 +11,14 @@ Built as a zero-build **Flask + SQLite + vanilla JavaScript** single-page app. N
 | Module | What it does |
 | --- | --- |
 | **Overview** | Greeting, daily AI briefing, live stats, focus ring, next deadlines, quick actions. |
-| **MIT-WPU Updates** | Scrapes the official MIT-WPU site (home, notices, news, events), classifies each item, extracts deadlines and writes a TL;DR + "what to do", then merges a curated campus guide when the site is unreachable. |
+| **MIT-WPU Updates** | Scrapes the official MIT-WPU site (home, notices, news, events), classifies each item, extracts deadlines and writes a TL;DR + "what to do", then merges a curated campus guide when the site is unreachable. Notices / Events / Examination / Placement / Social tabs and configured official profile shortcuts live here. |
 | **Hackathons & Events** | 20 curated, roll-forward opportunities (hackathons, contests, open source, fellowships, workshops, summits, internships) with deadline, mode, location, prize/perks, "why it's worth it", filters, saving and one-click deadline tasks. |
 | **AI News & Briefings** | Multi-source RSS (Google News, Bing News, major engineering publications) filtered by branch, deduplicated and ranked so stories with real summaries surface first, then distilled into TL;DR + takeaways. Headline-only feeds are labelled honestly instead of being padded. Falls back to a curated reading list. |
 | **Mail Summarizer** | Paste a notice or upload `.eml` / `.txt` (drag-and-drop supported). Returns TL;DR, deadlines, action items, category, urgency and tags; saves every summary and converts any action into a task. |
 | **Academic Vault** | 28 seeded resources plus your own links/notes: subjects, branch scope, types (course, notes, video, practice, tool), starring, search and filters. |
 | **Task Hub** | Kanban board (To do / In progress / Done) with drag-and-drop, priorities, due dates, tags, overdue tracking and source links back to campus notices, opportunities, news and mail summaries. |
 | **Saved** | One library for bookmarked campus updates, opportunities, briefings and summaries. |
-| **Settings** | Profile, branch, year, semester, goal, and a live status board for AI, campus feed and storage. |
+| **Settings** | Profile, branch, news interests, year, semester, goal, opt-in background Gmail analysis, and a live status board for AI, campus, social APIs and storage. |
 
 Global touches: instant search per view, **Ctrl/Cmd + K** command palette (`/` also works), notifications panel for imminent deadlines, skeleton loaders, empty states, toasts, keyboard and screen-reader labels, reduced-motion support, dark/light themes (persisted, respects OS preference), responsive laptop/mobile layouts and a mobile bottom navigation bar.
 
@@ -56,6 +56,17 @@ GEMINI_MODEL=gemini-2.5-flash
 
 Without a key (or when the API errors, rate-limits or times out) the app transparently uses its deterministic extractive summarizer. The UI labels the mode honestly everywhere ("Gemini summary" vs "Smart local summary").
 
+### Optional: official LinkedIn / Instagram updates
+
+The College Hub supports profile shortcuts and, where you supply authorised credentials, real posts from official APIs. It does **not** scrape personal profiles or invent posts, dates or sources.
+
+1. Add profile shortcuts without any API access using `SOCIAL_LINKS_JSON`, e.g.
+   `[{"label":"MIT-WPU LinkedIn","url":"https://www.linkedin.com/school/.../","platform":"linkedin"}]`.
+2. For LinkedIn, use a Posts API token with `r_organization_social` plus an admin/content role on the organisation page. Set `LINKEDIN_AUTHOR_URNS` (`urn:li:organization:<id>` or just the numeric ID). Personal-member posts need the restricted `r_member_social` scope and are not enabled by default.
+3. For Instagram, use a **professional** account. With Instagram API set `INSTAGRAM_ACCESS_TOKEN` and `INSTAGRAM_USER_ID`; with the Facebook Graph API set `INSTAGRAM_API_HOST=graph.facebook.com` and a compatible token. `INSTAGRAM_DISCOVERY_USERNAMES` may read public professional accounts through Business Discovery. Personal accounts are unsupported.
+
+Keep tokens only in `.env`/host environment variables, never in frontend code, commits or screenshots. If a request fails, the app simply shows the configured shortcuts and a short "unavailable" note.
+
 ---
 
 ## Configuration
@@ -64,7 +75,7 @@ All settings live in `.env` (see `.env.example`) and are read by `config.py`.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `SECRET_KEY` | dev key | Flask session signing. Set a real value in production. |
+| `SECRET_KEY` | random per process | Flask session signing. Set a real value in production so OAuth state survives restarts. |
 | `FLASK_DEBUG` | `false` | Flask debug mode. |
 | `PORT` | `5000` | Development server port. |
 | `DATABASE_PATH` | `instance/student_ecosystem.db` | SQLite file. Auto-falls back to a temp dir on read-only hosts such as Vercel. |
@@ -80,9 +91,10 @@ All settings live in `.env` (see `.env.example`) and are read by `config.py`.
 | `COLLEGE_CACHE_MINUTES` | `20` | Campus cache TTL. |
 | `BRIEFING_CACHE_MINUTES` | `360` | Daily briefing cache TTL. |
 | `AI_CACHE_MINUTES` | `10080` | AI result cache TTL (7 days). |
-| `CORS_ORIGINS` | `*` | Comma-separated allowed origins. |
+| `SOCIAL_CACHE_MINUTES` | `30` | Cache TTL for authorised social updates. |
+| `CORS_ORIGINS` | empty (same-origin) | Comma-separated allowed origins. Avoid `*` on a public deployment. |
 
-No secrets are hard-coded; the repository ships only safe defaults.
+No secrets are hard-coded; the repository ships only safe defaults. `.env` is git-ignored. A key that was ever committed must be rotated, even if it was later removed from the current files.
 
 ---
 
@@ -110,9 +122,10 @@ All endpoints return JSON. Errors use `{"error": "..."}` with an appropriate sta
 | `GET` / `PATCH` | `/api/profile` | Read or update name, branch, year, semester, goal. |
 | `GET` | `/api/branches` | Available branch list and mappings. |
 | `GET` | `/api/stats` | Aggregate counts (tasks, overdue, due this week, bookmarks, summaries, vault, opportunities). |
-| `GET` | `/api/college-updates?limit=&refresh=` | Campus feed with categories and live/curated status. |
-| `GET` | `/api/opportunities?track=&mode=&deadline=&saved=&q=` | Opportunity radar. |
-| `GET` | `/api/news?branch=&limit=&refresh=` | Summarized news briefings. |
+| `GET` | `/api/college-updates?limit=&refresh=&category=&q=` | Campus feed with category counts and live/curated/social status. |
+| `GET` | `/api/social-updates?limit=&refresh=` | Official authorised social posts plus configured profile shortcuts. |
+| `GET` | `/api/opportunities?track=&mode=&deadline=&saved=&q=&refresh=` | Opportunity radar; refresh rolls recurring deadlines forward. |
+| `GET` | `/api/news?branch=&limit=&refresh=&q=&preferences=` | Summarized news briefings with optional topic filtering. |
 | `GET` | `/api/briefing?refresh=` | Daily briefing generated from live context. |
 | `POST` | `/api/summarize` | JSON `{text, subject, sender, create_task}` **or** multipart file upload. |
 | `GET` / `POST` | `/api/summaries` | List saved summaries / summarize a post body. |
@@ -126,6 +139,8 @@ All endpoints return JSON. Errors use `{"error": "..."}` with an appropriate sta
 | `DELETE` | `/api/bookmarks/<id>` | Remove a bookmark. |
 | `GET` | `/api/search?q=` | Cross-entity search for the command palette. |
 | `GET` | `/api/notifications` | Deadlines needing attention. |
+| `GET` | `/auth/google`, `/api/gmail/status` | Optional Gmail OAuth connection and status. |
+| `GET` / `POST` | `/api/gmail/messages`, `/api/gmail/analyse` | Read inbox / analyse recent messages after authorization. |
 | `GET` | `/manifest.webmanifest` | PWA manifest. |
 | `GET` | `/favicon.ico`, `/static/*` | Icons and assets. |
 
@@ -144,6 +159,7 @@ Student_Ecosystem-main/
 ├── ai_summarizer.py     # Gemini client + fallback, notice/news/briefing summarization
 ├── college_fetcher.py   # Parallel MIT-WPU scraping, classification, curated merge
 ├── news_fetcher.py      # Multi-source RSS, dedupe, branch filtering
+├── social_fetcher.py    # Optional official LinkedIn/Instagram adapters and links
 ├── categories.py        # Branch mappings and keyword routing
 ├── data_cleaner.py      # Text cleaning helpers
 ├── templates/index.html # SPA shell, icon sprite, all views
@@ -168,7 +184,7 @@ pip install pytest
 pytest
 ```
 
-The suite uses a temporary SQLite database, so it never touches your real data. It exercises health, bootstrap, profile, campus, opportunities, news, briefing, search, notifications, the full mail summarizer (JSON + `.txt` + `.eml` uploads), summaries-to-task conversion, task CRUD/validation, vault CRUD, bookmarks, static assets and SPA routes.
+The suite uses a temporary SQLite database, so it never touches your real data. It exercises health, bootstrap, profile and news preferences, campus feeds, social endpoints, opportunities, news query filtering, briefing refresh, search, notifications, the mail summarizer (JSON + `.txt` + `.eml` uploads), summaries-to-task conversion, task CRUD/validation, vault CRUD, bookmarks, static assets and SPA routes.
 
 Manual smoke test after starting the server:
 
@@ -190,9 +206,9 @@ Set `SECRET_KEY`, keep `DATABASE_PATH` on a persistent volume (e.g. `/data/stude
 
 ### Vercel
 
-`vercel.json` routes every request to the Flask app, which serves the SPA and static assets itself. Serverless filesystems are read-only apart from `/tmp`; `config.py` detects this automatically and falls back to a temp-dir SQLite file, so no extra configuration is needed. Set `DATABASE_PATH` explicitly only if you want a different location.
+`vercel.json` routes static assets directly and sends all other paths to the Flask app. Serverless filesystems are read-only apart from `/tmp`; `config.py` falls back to writable temp paths for SQLite and the Gmail token. Set `SECRET_KEY`, `GOOGLE_REDIRECT_URI=https://<your-domain>/auth/google/callback` and `CORS_ORIGINS` to the deployment origin.
 
-Note that `/tmp` is ephemeral between cold starts; for durable data deploy on a host with a persistent disk, or point `DATABASE_PATH` at a mounted volume.
+**Important:** `/tmp` is ephemeral and per-instance. Tasks, bookmarks, summaries, OAuth state and the database will not persist reliably on Vercel. This is fine for a read-only presentation demo, but use a persistent disk/database host for real multi-user data. Register the same redirect URI with Google and keep `credentials.json` out of the repository.
 
 ### Docker (optional)
 

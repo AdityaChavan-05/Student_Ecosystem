@@ -17,8 +17,8 @@ import pytest
 # Configure an isolated database *before* importing the application.
 _TMP_DIR = Path(tempfile.mkdtemp(prefix="student-ecosystem-tests-"))
 os.environ["DATABASE_PATH"] = str(_TMP_DIR / "test.db")
-os.environ.pop("AI_API_KEY", None)
-os.environ.pop("GEMINI_API_KEY", None)
+os.environ["AI_API_KEY"] = ""
+os.environ["GEMINI_API_KEY"] = ""
 
 import app as application  # noqa: E402  (must follow env setup)
 
@@ -49,7 +49,7 @@ def test_health(client):
     data = client.get("/api/health").get_json()
     assert data["status"] == "ok"
     assert data["database"] == "sqlite"
-    assert data["ai"] in {"fallback", "live"}
+    assert data["ai"] in {"fallback", "configured"}
 
 
 def test_bootstrap(client):
@@ -58,7 +58,10 @@ def test_bootstrap(client):
     data = response.get_json()
     assert data["profile"]["name"]
     assert "Computer Science" in data["branches"]
-    assert set(data["features"]) >= {"ai", "ai_mode", "model"}
+    assert set(data["features"]) >= {"ai", "ai_mode", "model", "social"}
+    assert "linkedin" in data["features"]["social"]
+    assert isinstance(data["features"]["social"]["links"], list)
+    assert data["topics"]["Computer Science"]
     assert "tasks_open" in data["stats"]
 
 
@@ -105,10 +108,94 @@ def test_news_briefings(client):
     assert article.get("tldr")
 
 
-def test_briefing(client):
+def test_news_query_filters_cached_feed(client):
+    data = client.get("/api/news?branch=Computer%20Science&limit=3&q=no-such-engineering-topic-xyz").get_json()
+    assert data["query"] == "no-such-engineering-topic-xyz"
+    assert data["articles"] == []
+    assert data["count"] == 0
+
+
+def test_social_updates_are_honest_without_credentials(client, monkeypatch):
+    monkeypatch.setattr(
+        application.Config,
+        "SOCIAL_LINKS_JSON",
+        '[{"label":"MIT-WPU LinkedIn","url":"https://www.linkedin.com/school/mitwpu/","platform":"linkedin"}]',
+    )
+    monkeypatch.setattr(application.Config, "LINKEDIN_ACCESS_TOKEN", "")
+    monkeypatch.setattr(application.Config, "LINKEDIN_AUTHOR_URNS", ())
+    monkeypatch.setattr(application.Config, "INSTAGRAM_ACCESS_TOKEN", "")
+    monkeypatch.setattr(application.Config, "INSTAGRAM_USER_ID", "")
+
+    data = client.get("/api/social-updates?limit=7").get_json()
+    assert data["count"] == 0
+    assert data["updates"] == []
+    assert data["profiles"][0]["label"] == "MIT-WPU LinkedIn"
+    assert data["status"]["linkedin"] is False
+    assert "officially authorised" in data["note"]
+
+
+def test_linkedin_adapter_uses_official_posts_api(monkeypatch):
+    import social_fetcher
+
+    calls = []
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "elements": [
+                    {
+                        "id": "urn:li:share:12345",
+                        "commentary": "Placement talk by {mention|urn:li:organization:99|MIT-WPU} today.",
+                        "publishedAt": 1700000000000,
+                    }
+                ]
+            }
+
+    def fake_get(url, params, headers, timeout):
+        calls.append((url, params, headers, timeout))
+        return Response()
+
+    monkeypatch.setattr(application.Config, "LINKEDIN_ACCESS_TOKEN", "dummy-token")
+    monkeypatch.setattr(
+        application.Config, "LINKEDIN_AUTHOR_URNS", ("urn:li:organization:99",)
+    )
+    monkeypatch.setattr(social_fetcher.SESSION, "get", fake_get)
+
+    updates = social_fetcher.fetch_linkedin_updates(limit=5)
+
+    assert len(updates) == 1
+    assert calls[0][0] == "https://api.linkedin.com/rest/posts"
+    assert calls[0][1]["q"] == "author"
+    assert calls[0][1]["author"] == "urn:li:organization:99"
+    assert calls[0][2]["X-RestLi-Method"] == "FINDER"
+    assert "MIT-WPU" in updates[0]["title"]
+    assert updates[0]["published_at"] == "2023-11-14T22:13:20+00:00"
+    assert updates[0]["link"] == "https://www.linkedin.com/feed/update/urn:li:share:12345/"
+
+
+def test_profile_news_preferences_and_topics(client):
+    response = client.patch(
+        "/api/profile",
+        json={"news_preferences": ["Artificial Intelligence", "Robotics", "Artificial Intelligence"]},
+    )
+    assert response.status_code == 200
+    assert response.get_json()["profile"]["news_preferences"] == ["Artificial Intelligence"]
+
+    bootstrap = client.get("/api/bootstrap").get_json()
+    assert "artificial intelligence" in bootstrap["topics"]["Artificial Intelligence"]
+    client.patch("/api/profile", json={"news_preferences": []})
+
+
+def test_briefing_and_refresh(client):
     data = client.get("/api/briefing").get_json()
     assert data["briefing"]["summary"]
     assert isinstance(data["briefing"]["priorities"], list)
+
+    refreshed = client.get("/api/briefing?refresh=true").get_json()
+    assert refreshed["briefing"]["summary"]
 
 
 def test_search_and_notifications(client):
@@ -307,6 +394,16 @@ def test_spa_and_assets(client):
     for legacy in ("/news", "/college", "/opportunities", "/mail", "/vault", "/tasks"):
         response = client.get(legacy)
         assert response.status_code in {301, 302}, legacy
+
+
+def test_spa_restores_mail_summarizer_controls(client):
+    html = client.get("/").get_data(as_text=True)
+    for element_id in (
+        "mail-form", "mail-body", "mail-file", "mail-submit", "mail-result",
+        "mail-history", "news-topics", "campus-shortcuts", "gmail-auto",
+    ):
+        assert f'id="{element_id}"' in html, element_id
+    assert "display: none !important" not in html.split("id=\"view-mail\"")[1].split("<!-- ============ END MAIL")[0]
 
 
 def test_unknown_api_returns_json_404(client):
