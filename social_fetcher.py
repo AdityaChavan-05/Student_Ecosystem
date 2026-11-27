@@ -295,7 +295,18 @@ def fetch_instagram_updates(limit: int = 8) -> list[dict]:
     except Exception:
         logger.info("Instagram media request failed for the connected account.")
 
-    for username in Config.INSTAGRAM_DISCOVERY_USERNAMES[:4]:
+    # Business Discovery is a Facebook Login / Graph API feature. An
+    # Instagram Login token on graph.instagram.com cannot use it, so skip
+    # silently rather than reporting a misleading failure.
+    discovery_supported = "graph.facebook.com" in Config.INSTAGRAM_API_HOST.lower()
+    if Config.INSTAGRAM_DISCOVERY_USERNAMES and not discovery_supported:
+        logger.info(
+            "Skipping Instagram Business Discovery; set INSTAGRAM_API_HOST=graph.facebook.com to enable it."
+        )
+
+    for username in (
+        Config.INSTAGRAM_DISCOVERY_USERNAMES[:4] if discovery_supported else ()
+    ):
         fields = (
             "business_discovery.username("
             f"{quote(username, safe='')})"

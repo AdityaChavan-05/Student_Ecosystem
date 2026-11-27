@@ -76,8 +76,11 @@ class Config:
 
     # Flask ---------------------------------------------------------------
     # A random per-process fallback is deliberately safer than a predictable
-    # default. Set SECRET_KEY explicitly when sessions must survive restarts.
-    SECRET_KEY = os.getenv("SECRET_KEY", "").strip() or secrets.token_urlsafe(32)
+    # default, but it cannot survive restarts. OAuth state uses the session,
+    # so a stable key is required before Gmail connection is enabled.
+    SECRET_KEY_VALUE = os.getenv("SECRET_KEY", "").strip()
+    SECRET_KEY_CONFIGURED = bool(SECRET_KEY_VALUE)
+    SECRET_KEY = SECRET_KEY_VALUE or secrets.token_urlsafe(32)
     DEBUG = _env_bool("FLASK_DEBUG", False)
     MAX_CONTENT_LENGTH = 6 * 1024 * 1024
     JSON_SORT_KEYS = False

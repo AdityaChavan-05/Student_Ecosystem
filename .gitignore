@@ -40,8 +40,11 @@ instance/
 *.db-wal
 *.db-shm
 *.sqlite3
-# Gmail OAuth credentials and tokens
+# Gmail OAuth credentials and tokens (any location)
 credentials.json
+credentials*.json
 client_secret*.json
 token.json
+token*.json
+gmail_token.json
 *.token

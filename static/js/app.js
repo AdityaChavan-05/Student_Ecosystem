@@ -244,7 +244,10 @@ function bindInterface() {
     state.filters.newsTopic = "All";
     updateProfileUI();
     try {
-      await api("/api/profile", { method: "PATCH", body: { branch } });
+      const updated = await api("/api/profile", { method: "PATCH", body: { branch } });
+      if (updated?.profile?.news_preferences) {
+        state.profile.news_preferences = updated.profile.news_preferences;
+      }
     } catch {
       /* keep the local preference even if the write fails */
     }
@@ -321,12 +324,34 @@ $("#gmail-load-more")?.addEventListener("click", async () => {
 
   $("#mail-form")?.addEventListener("submit", handleMailSubmit);
   $("#mail-sample")?.addEventListener("click", sampleNotice);
-  $("#mail-file")?.addEventListener("change", (event) => {
+
+  const updateMailFileName = (file) => {
     const name = $("#mail-file-name");
-    const file = event.target.files?.[0];
     if (name) {
       name.textContent = file ? file.name : "";
       name.hidden = !file;
+    }
+  };
+  $("#mail-file")?.addEventListener("change", (event) => {
+    updateMailFileName(event.target.files?.[0]);
+  });
+
+  const dropZone = $(".file-drop");
+  dropZone?.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    dropZone.classList.add("dragover");
+  });
+  dropZone?.addEventListener("dragleave", () => {
+    dropZone.classList.remove("dragover");
+  });
+  dropZone?.addEventListener("drop", (event) => {
+    event.preventDefault();
+    dropZone.classList.remove("dragover");
+    const input = $("#mail-file");
+    const files = event.dataTransfer?.files;
+    if (input && files?.length) {
+      input.files = files;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
     }
   });
 

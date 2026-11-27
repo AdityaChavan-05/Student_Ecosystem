@@ -63,7 +63,7 @@ The College Hub supports profile shortcuts and, where you supply authorised cred
 1. Add profile shortcuts without any API access using `SOCIAL_LINKS_JSON`, e.g.
    `[{"label":"MIT-WPU LinkedIn","url":"https://www.linkedin.com/school/.../","platform":"linkedin"}]`.
 2. For LinkedIn, use a Posts API token with `r_organization_social` plus an admin/content role on the organisation page. Set `LINKEDIN_AUTHOR_URNS` (`urn:li:organization:<id>` or just the numeric ID). Personal-member posts need the restricted `r_member_social` scope and are not enabled by default.
-3. For Instagram, use a **professional** account. With Instagram API set `INSTAGRAM_ACCESS_TOKEN` and `INSTAGRAM_USER_ID`; with the Facebook Graph API set `INSTAGRAM_API_HOST=graph.facebook.com` and a compatible token. `INSTAGRAM_DISCOVERY_USERNAMES` may read public professional accounts through Business Discovery. Personal accounts are unsupported.
+3. For Instagram, use a **professional** account. With Instagram API set `INSTAGRAM_ACCESS_TOKEN` and `INSTAGRAM_USER_ID`; with the Facebook Graph API set `INSTAGRAM_API_HOST=graph.facebook.com` and a compatible token. `INSTAGRAM_DISCOVERY_USERNAMES` may read public professional accounts through Business Discovery, but only when `INSTAGRAM_API_HOST=graph.facebook.com` and the token has the Facebook Login permissions. It is skipped with an Instagram-Login token. Personal accounts are unsupported.
 
 Keep tokens only in `.env`/host environment variables, never in frontend code, commits or screenshots. If a request fails, the app simply shows the configured shortcuts and a short "unavailable" note.
 
@@ -75,7 +75,7 @@ All settings live in `.env` (see `.env.example`) and are read by `config.py`.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `SECRET_KEY` | random per process | Flask session signing. Set a real value in production so OAuth state survives restarts. |
+| `SECRET_KEY` | random per process locally | Flask session signing. A stable value is required in production; Gmail OAuth endpoints return `503` without it. |
 | `FLASK_DEBUG` | `false` | Flask debug mode. |
 | `PORT` | `5000` | Development server port. |
 | `DATABASE_PATH` | `instance/student_ecosystem.db` | SQLite file. Auto-falls back to a temp dir on read-only hosts such as Vercel. |
@@ -206,7 +206,7 @@ Set `SECRET_KEY`, keep `DATABASE_PATH` on a persistent volume (e.g. `/data/stude
 
 ### Vercel
 
-`vercel.json` routes static assets directly and sends all other paths to the Flask app. Serverless filesystems are read-only apart from `/tmp`; `config.py` falls back to writable temp paths for SQLite and the Gmail token. Set `SECRET_KEY`, `GOOGLE_REDIRECT_URI=https://<your-domain>/auth/google/callback` and `CORS_ORIGINS` to the deployment origin.
+`vercel.json` builds `static/**` with `@vercel/static` (Vercel ignores Flask's `static_folder` when `builds` is used), then routes `/static/*` to those files and all other paths to the Flask app. Serverless filesystems are read-only apart from `/tmp`; `config.py` falls back to writable temp paths for SQLite and the Gmail token. Set a stable `SECRET_KEY`, `GOOGLE_REDIRECT_URI=https://<your-domain>/auth/google/callback` and `CORS_ORIGINS` to the deployment origin. Without `SECRET_KEY`, Gmail connection is disabled with a clear `503` rather than failing at the OAuth callback.
 
 **Important:** `/tmp` is ephemeral and per-instance. Tasks, bookmarks, summaries, OAuth state and the database will not persist reliably on Vercel. This is fine for a read-only presentation demo, but use a persistent disk/database host for real multi-user data. Register the same redirect URI with Google and keep `credentials.json` out of the repository.
 

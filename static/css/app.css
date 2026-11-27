@@ -2057,8 +2057,4 @@ kbd + kbd { margin-left: 3px; }
 .source-strip a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
 #gmail-connect { margin-top: 10px; }
 
-/* Mail Summarizer panels are active again */
-#view-mail .mail-composer,
-#view-mail .mail-history-panel {
-    display: block;
-}
+/* Mail Summarizer panels use their base flex/block layouts. */

@@ -162,6 +162,11 @@ def get_gmail_service():
         cache_discovery=False,
     )
 
+
+def oauth_configured() -> bool:
+    """OAuth needs a stable session key and a client-secrets file."""
+    return Config.SECRET_KEY_CONFIGURED and Path(Config.GOOGLE_CLIENT_SECRETS_FILE).is_file()
+
 def decode_gmail_body(data: str) -> str:
     """Decode Gmail's URL-safe Base64 message content."""
     if not data:
@@ -374,7 +379,12 @@ def process_gmail_message(service, message_id: str) -> dict:
 @app.get("/api/gmail/status")
 def gmail_status():
     credentials = get_gmail_credentials()
-    return jsonify({"connected": credentials is not None})
+    return jsonify(
+        {
+            "connected": credentials is not None,
+            "configured": oauth_configured(),
+        }
+    )
 
 
 @app.get("/api/gmail/messages")
@@ -733,9 +743,8 @@ def load_campus(limit: int, force_refresh: bool = False, category: str = "", que
             social_items.append(entry)
         status["social_count"] = len(social_items)
         updates = [*updates, *social_items]
-        # Social posts are real, but they do not turn a curated campus scan
-        # into a live college-website scan.
-        status["live_count"] += len(social_items)
+        # Social posts are real, but they are not college-site links. Keep
+        # live_count limited to the actual college scan.
 
         categories: dict[str, int] = {}
         for item in updates:
@@ -948,6 +957,11 @@ def mail_page():
 def google_login():
     credentials_file = Path(Config.GOOGLE_CLIENT_SECRETS_FILE)
 
+    if not Config.SECRET_KEY_CONFIGURED:
+        return json_error(
+            "Gmail connection needs a stable SECRET_KEY configured on this server.",
+            503,
+        )
     if not credentials_file.is_file():
         return json_error("Google OAuth credentials file is missing.", 503)
 
@@ -970,6 +984,12 @@ def google_login():
 
 @app.get("/auth/google/callback")
 def google_callback():
+    if not Config.SECRET_KEY_CONFIGURED:
+        return json_error(
+            "Gmail connection needs a stable SECRET_KEY configured on this server.",
+            503,
+        )
+
     expected_state = session.pop("oauth_state", None)
     received_state = request.args.get("state", "")
 
@@ -1111,8 +1131,20 @@ def profile():
     if request.method == "GET":
         return jsonify({"profile": get_settings()})
     patch = request_json()
-    if patch.get("branch") and patch["branch"] not in BRANCH_MAPPINGS:
+    current = get_settings()
+    new_branch = patch.get("branch")
+    if new_branch and new_branch not in BRANCH_MAPPINGS:
         return json_error("Unsupported engineering branch.")
+    if new_branch:
+        # The primary branch is always included by the feed, so it must never
+        # be stored as an interest. On a branch switch, drop the old branch too.
+        base = patch.get("news_preferences", current.get("news_preferences") or [])
+        if not isinstance(base, (list, tuple)):
+            base = []
+        excluded = {new_branch}
+        if new_branch != current.get("branch"):
+            excluded.add(current.get("branch"))
+        patch["news_preferences"] = [item for item in base if item not in excluded]
     if "news_preferences" in patch:
         preferences = patch.get("news_preferences") or []
         if not isinstance(preferences, (list, tuple)):

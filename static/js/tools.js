@@ -581,8 +581,15 @@ async function checkGmailConnection() {
   const connect = $("#gmail-connect");
   try {
     const data = await api("/api/gmail/status");
-    if (status) status.textContent = data.connected ? "Gmail connected" : "Gmail is not connected yet";
-    if (connect) connect.hidden = Boolean(data.connected);
+    const configured = data.configured !== false;
+    if (status) {
+      status.textContent = data.connected
+        ? "Gmail connected"
+        : configured
+          ? "Gmail is not connected yet"
+          : "Gmail connection is not configured on this server";
+    }
+    if (connect) connect.hidden = Boolean(data.connected) || !configured;
     state.gmailConnected = Boolean(data.connected);
     return state.gmailConnected;
   } catch {
@@ -1017,18 +1024,26 @@ function renderSettings() {
 
 async function handleSettingsSubmit(event) {
   event.preventDefault();
+  const branch = $("#settings-branch")?.value || state.profile.branch;
+  const previousPreferences = [...(state.profile.news_preferences || [])].sort();
   const payload = {
     name: ($("#settings-name")?.value || "").trim(),
-    branch: $("#settings-branch")?.value || state.profile.branch,
+    branch,
     year: ($("#settings-year")?.value || "").trim(),
     semester: ($("#settings-semester")?.value || "").trim(),
     goal: ($("#settings-goal")?.value || "").trim(),
-    news_preferences: $$("#settings-news-preferences input:checked").map((input) => input.value),
+    // The primary branch is rendered as a disabled chip; it is not an interest.
+    news_preferences: $$("#settings-news-preferences input:checked")
+      .map((input) => input.value)
+      .filter((item) => item !== branch),
   };
   const note = $("#settings-note");
   try {
     const response = await api("/api/profile", { method: "PATCH", body: payload });
     const branchChanged = response.profile.branch !== state.profile.branch;
+    const preferencesChanged =
+      JSON.stringify(previousPreferences) !==
+      JSON.stringify([...(response.profile.news_preferences || [])].sort());
     state.profile = response.profile;
     if (response.stats) state.stats = response.stats;
     updateProfileUI();
@@ -1038,13 +1053,17 @@ async function handleSettingsSubmit(event) {
       setTimeout(() => { note.textContent = ""; }, 3000);
     }
     toast("Your preferences are saved.", { title: "Profile updated" });
-    if (branchChanged) {
+    if (branchChanged || preferencesChanged) {
       state.loaded.news = false;
       state.news = [];
       state.newsMeta = null;
       const select = $("#news-branch");
       if (select) select.value = state.profile.branch;
-      renderOverview();
+      if (branchChanged) {
+        renderOverview();
+      } else if (currentView() === "news") {
+        await loadNewsView(true);
+      }
     }
     renderSettings();
   } catch (error) {

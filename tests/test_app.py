@@ -65,6 +65,32 @@ def test_bootstrap(client):
     assert "tasks_open" in data["stats"]
 
 
+def test_settings_keep_scalar_values_as_strings(client):
+    application.update_settings({"name": "123"})
+    assert application.get_settings()["name"] == "123"
+    application.update_settings({"name": "MIT-WPU Student"})
+
+
+def test_gmail_oauth_requires_stable_secret(client, monkeypatch):
+    monkeypatch.setattr(application.Config, "SECRET_KEY_CONFIGURED", False)
+    status = client.get("/api/gmail/status").get_json()
+    assert status["connected"] is False
+    assert status["configured"] is False
+    assert client.get("/auth/google").status_code == 503
+
+
+def test_vercel_builds_include_static_assets():
+    import json
+
+    vercel = json.loads(
+        (Path(__file__).resolve().parents[1] / "vercel.json").read_text(encoding="utf-8")
+    )
+    assert any(
+        build.get("src") == "static/**" and build.get("use") == "@vercel/static"
+        for build in vercel["builds"]
+    )
+
+
 def test_profile_round_trip(client):
     response = client.patch(
         "/api/profile", json={"name": "Test Student", "branch": "Artificial Intelligence"}
@@ -174,6 +200,51 @@ def test_linkedin_adapter_uses_official_posts_api(monkeypatch):
     assert "MIT-WPU" in updates[0]["title"]
     assert updates[0]["published_at"] == "2023-11-14T22:13:20+00:00"
     assert updates[0]["link"] == "https://www.linkedin.com/feed/update/urn:li:share:12345/"
+
+
+def test_instagram_discovery_skipped_without_facebook_host(monkeypatch):
+    import social_fetcher
+
+    calls = []
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"data": []}
+
+    def fake_get(url, params, timeout):
+        calls.append((url, params))
+        return Response()
+
+    monkeypatch.setattr(application.Config, "INSTAGRAM_ACCESS_TOKEN", "dummy-token")
+    monkeypatch.setattr(application.Config, "INSTAGRAM_USER_ID", "123")
+    monkeypatch.setattr(application.Config, "INSTAGRAM_API_HOST", "graph.instagram.com")
+    monkeypatch.setattr(application.Config, "INSTAGRAM_DISCOVERY_USERNAMES", ("mitwpu",))
+    monkeypatch.setattr(social_fetcher.SESSION, "get", fake_get)
+
+    assert social_fetcher.fetch_instagram_updates(limit=5) == []
+    assert len(calls) == 1
+    assert "business_discovery" not in calls[0][1]["fields"]
+
+
+def test_branch_change_drops_stale_preferences(client):
+    client.patch("/api/profile", json={"news_preferences": []})
+    response = client.patch(
+        "/api/profile",
+        json={
+            "branch": "Electronics",
+            "news_preferences": [
+                "Computer Science",
+                "Electronics",
+                "Artificial Intelligence",
+            ],
+        },
+    )
+    assert response.status_code == 200
+    assert response.get_json()["profile"]["news_preferences"] == ["Artificial Intelligence"]
+    client.patch("/api/profile", json={"branch": "Computer Science", "news_preferences": []})
 
 
 def test_profile_news_preferences_and_topics(client):

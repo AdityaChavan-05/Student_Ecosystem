@@ -309,6 +309,10 @@ DEFAULT_PROFILE = {
     "news_preferences": [],
 }
 
+# Only these settings have a structured JSON contract. Decoding every scalar
+# would turn values such as "123" or "true" into non-string API responses.
+STRUCTURED_SETTINGS = {"news_preferences"}
+
 
 def get_settings() -> dict:
     init_db()
@@ -317,7 +321,10 @@ def get_settings() -> dict:
         with get_connection() as connection:
             rows = connection.execute("SELECT key, value FROM settings").fetchall()
         for row in rows:
-            values[row["key"]] = _json(row["value"], row["value"])
+            if row["key"] in STRUCTURED_SETTINGS:
+                values[row["key"]] = _json(row["value"], [])
+            else:
+                values[row["key"]] = row["value"]
     except Exception:
         logger.warning("Could not read settings.", exc_info=True)
     return values
