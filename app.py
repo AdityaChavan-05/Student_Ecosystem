@@ -16,11 +16,21 @@ import logging
 import os
 import re
 import secrets
-os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 from datetime import date, datetime, timezone
 from email import policy
 from email.parser import BytesParser
 from pathlib import Path
+from urllib.parse import urlparse
+
+from config import Config
+
+# oauthlib blocks plain HTTP by default. Allow it only for local development,
+# never for a deployed HTTPS redirect URI.
+if Config.DEBUG or urlparse(Config.GOOGLE_REDIRECT_URI).hostname in {
+    "127.0.0.1",
+    "localhost",
+}:
+    os.environ.setdefault("OAUTHLIB_INSECURE_TRANSPORT", "1")
 
 from google.auth.transport.requests import Request as GoogleAuthRequest
 from google.oauth2.credentials import Credentials
@@ -42,7 +52,6 @@ from ai_summarizer import (
 )
 from categories import BRANCH_MAPPINGS, get_available_branches
 from college_fetcher import get_college_updates, live_status
-from config import Config
 from database import (
     TASK_PRIORITIES,
     TASK_STATUSES,
@@ -74,12 +83,15 @@ from database import (
     new_id,
     search_all,
     set_cached_value,
+    today,
     toggle_bookmark,
     update_resource,
     update_settings,
     update_task,
 )
-from news_fetcher import get_news
+from news_fetcher import BRANCH_FILTERS, get_news
+from seed_data import seed_opportunities
+from social_fetcher import get_social_updates, social_status
 
 
 logging.basicConfig(
@@ -99,6 +111,7 @@ app = Flask(
     static_url_path="/static",
 )
 app.config.from_object(Config)
+app.json.sort_keys = False
 
 # Initialise the database at import time so serverless cold starts are fast.
 init_db()
@@ -115,23 +128,24 @@ def get_gmail_credentials():
     if not token_path.exists():
         return None
 
-    credentials = Credentials.from_authorized_user_file(
-        str(token_path),
-        GMAIL_SCOPES,
-    )
-
-    if credentials.expired and credentials.refresh_token:
-        credentials.refresh(GoogleAuthRequest())
-        token_path.parent.mkdir(parents=True, exist_ok=True)
-        token_path.write_text(
-            credentials.to_json(),
-            encoding="utf-8",
+    try:
+        credentials = Credentials.from_authorized_user_file(
+            str(token_path),
+            GMAIL_SCOPES,
         )
 
-    if not credentials.valid:
-        return None
+        if credentials.expired and credentials.refresh_token:
+            credentials.refresh(GoogleAuthRequest())
+            token_path.parent.mkdir(parents=True, exist_ok=True)
+            token_path.write_text(
+                credentials.to_json(),
+                encoding="utf-8",
+            )
 
-    return credentials
+        return credentials if credentials.valid else None
+    except Exception:
+        logger.warning("Saved Gmail credentials could not be loaded.", exc_info=True)
+        return None
 
 
 def get_gmail_service():
@@ -147,20 +161,6 @@ def get_gmail_service():
         credentials=credentials,
         cache_discovery=False,
     )
-
-def decode_gmail_body(data: str) -> str:
-    """Decode Gmail's URL-safe Base64 message content."""
-    if not data:
-        return ""
-
-    try:
-        decoded = base64.urlsafe_b64decode(
-            data + "=" * (-len(data) % 4)
-        )
-        return decoded.decode("utf-8", errors="replace")
-    except Exception:
-        return ""
-
 
 def decode_gmail_body(data: str) -> str:
     """Decode Gmail's URL-safe Base64 message content."""
@@ -541,7 +541,7 @@ def days_left(deadline: str | None) -> int | None:
     if not deadline:
         return None
     try:
-        return (date.fromisoformat(deadline[:10]) - date.today()).days
+        return (date.fromisoformat(deadline[:10]) - today()).days
     except ValueError:
         return None
 
@@ -566,6 +566,7 @@ def load_news(branch: str, limit: int, force_refresh: bool = False, query: str =
         cached = get_cached_value(key)
         if isinstance(cached, dict):
             cached["cached"] = True
+            cached["query"] = query
             if query:
                 lowered = query.lower()
                 cached["articles"] = [
@@ -574,7 +575,7 @@ def load_news(branch: str, limit: int, force_refresh: bool = False, query: str =
                     if lowered in (item.get("title", "") + " " + item.get("description", "")).lower()
                     or lowered in " ".join(item.get("tags", [])).lower()
                 ]
-                cached["count"] = len(cached["articles"])
+            cached["count"] = len(cached.get("articles", []))
             return cached
 
     articles = get_news(branch, limit=limit)
@@ -600,16 +601,73 @@ def load_news(branch: str, limit: int, force_refresh: bool = False, query: str =
             }
         )
 
-    payload = {
+    unfiltered = list(results)
+    if query:
+        lowered = query.lower()
+        results = [
+            item
+            for item in results
+            if lowered in (item.get("title", "") + " " + item.get("description", "")).lower()
+            or lowered in " ".join(item.get("tags", [])).lower()
+        ]
+
+    common = {
         "branch": branch,
-        "count": len(results),
-        "articles": results,
         "ai_mode": "ai" if ai_available() else "heuristic",
         "updated_at": iso_now(),
         "cached": False,
-        "query": query,
     }
-    set_cached_value(key, payload, ttl_minutes=Config.NEWS_CACHE_MINUTES)
+    payload = {**common, "count": len(results), "articles": results, "query": query}
+    # Store the unfiltered feed so different searches share one upstream fetch.
+    set_cached_value(
+        key,
+        {**common, "count": len(unfiltered), "articles": unfiltered, "query": ""},
+        ttl_minutes=Config.NEWS_CACHE_MINUTES,
+    )
+    return payload
+
+
+def filter_news_by_preferences(articles: list[dict], preferences: list[str]) -> list[dict]:
+    """Narrow a feed to the student's selected engineering interests."""
+    keywords: list[str] = []
+    for preference in preferences:
+        keywords.extend(BRANCH_FILTERS.get(str(preference), ()))
+    keywords = list(dict.fromkeys(keyword.lower() for keyword in keywords))
+    if not keywords:
+        return articles
+    filtered = []
+    for article in articles:
+        text = " ".join(
+            str(article.get(field) or "")
+            for field in ("title", "description", "summary", "tldr")
+        ).lower()
+        text += " " + " ".join(str(tag) for tag in article.get("tags") or []).lower()
+        if any(keyword in text for keyword in keywords):
+            filtered.append(article)
+    return filtered or articles
+
+
+def load_social(limit: int = 8, force_refresh: bool = False) -> dict:
+    """Fetch authorised social posts with a short cache."""
+    key = cache_key("social", limit)
+    if not force_refresh:
+        cached = get_cached_value(key)
+        if isinstance(cached, dict):
+            return {**cached, "cached": True}
+    try:
+        payload = get_social_updates(limit)
+    except Exception:
+        logger.info("Social feed failed; continuing without social updates.")
+        payload = {
+            "count": 0,
+            "updates": [],
+            "profiles": social_status()["links"],
+            "status": social_status(),
+            "note": "Social updates are temporarily unavailable.",
+        }
+    payload["cached"] = False
+    payload["updated_at"] = iso_now()
+    set_cached_value(key, payload, ttl_minutes=Config.SOCIAL_CACHE_MINUTES)
     return payload
 
 
@@ -642,8 +700,12 @@ def load_campus(limit: int, force_refresh: bool = False, category: str = "", que
                     )
                     item["tldr"] = summary.get("tldr") or item.get("tldr")
                     item["what_to_do"] = summary.get("action_items") or item.get("what_to_do")
-                    if summary.get("deadlines"):
-                        item["deadline"] = summary["deadlines"][0].get("date") or item.get("deadline")
+                    first_deadline = next(
+                        (entry for entry in summary.get("deadlines") or [] if isinstance(entry, dict)),
+                        None,
+                    )
+                    if first_deadline:
+                        item["deadline"] = first_deadline.get("date") or item.get("deadline")
                     if summary.get("urgency"):
                         item["urgency"] = summary["urgency"]
                     enriched += 1
@@ -654,21 +716,42 @@ def load_campus(limit: int, force_refresh: bool = False, category: str = "", que
             item["id"] = item.get("id") or hash_id("campus_", item.get("link") or item.get("title", ""))
             left = days_left(item.get("deadline"))
             item["days_left"] = left
-            if left is not None and left < 0:
-                item["curated"] = item["curated"]
             item["what_to_do"] = item.get("what_to_do") or []
             item["tags"] = item.get("tags") or ["campus"]
 
         status = live_status(updates)
+        social_payload = load_social(8, force_refresh=force_refresh)
+        social_items = []
+        for item in social_payload.get("updates", []):
+            entry = dict(item)
+            entry["id"] = entry.get("id") or hash_id(
+                "social_", entry.get("link") or entry.get("title", "")
+            )
+            entry["days_left"] = None
+            entry["what_to_do"] = []
+            entry["tags"] = entry.get("tags") or ["social"]
+            social_items.append(entry)
+        status["social_count"] = len(social_items)
+        updates = [*updates, *social_items]
+        # Social posts are real, but they do not turn a curated campus scan
+        # into a live college-website scan.
+        status["live_count"] += len(social_items)
+
         categories: dict[str, int] = {}
         for item in updates:
-            categories[item["category"]] = categories.get(item["category"], 0) + 1
+            category_name = item.get("category") or "General"
+            categories[category_name] = categories.get(category_name, 0) + 1
 
         payload = {
             "count": len(updates),
             "updates": updates,
             "status": status,
             "categories": categories,
+            "social": {
+                "profiles": social_payload.get("profiles", []),
+                "status": social_payload.get("status", {}),
+                "note": social_payload.get("note", ""),
+            },
             "college_website_configured": bool(Config.COLLEGE_WEBSITE_URL),
             "college": {
                 "name": Config.COLLEGE_NAME,
@@ -717,16 +800,22 @@ def decorate_opportunities(items: list[dict]) -> list[dict]:
     return decorated
 
 
-def build_briefing() -> dict:
+def build_briefing(force: bool = False) -> dict:
     profile = get_settings()
     tasks = [task for task in list_tasks() if task["status"] != "done"][:5]
     # Prefer upcoming campus items so the briefing does not lead with a closed event.
-    campus_updates = load_campus(12).get("updates", [])
+    campus_updates = load_campus(12, force_refresh=force).get("updates", [])
     upcoming = [item for item in campus_updates if (item.get("days_left") or 0) >= 0]
     upcoming.sort(key=lambda item: str(item.get("deadline") or "9999-12-31"))
     campus = (upcoming or campus_updates)[:3]
     opportunities = decorate_opportunities(list_opportunities(deadline_window="open"))[:3]
-    news_cached = get_cached_value(cache_key("news", profile.get("branch", "Computer Science"), 9))
+    branch = profile.get("branch", "Computer Science")
+    if force:
+        try:
+            load_news(branch, 9, force_refresh=True)
+        except Exception:
+            logger.info("Forced news refresh failed while building briefing.")
+    news_cached = get_cached_value(cache_key("news", branch, 9))
     news = (news_cached or {}).get("articles", [])[:2] if isinstance(news_cached, dict) else []
 
     context = {
@@ -743,7 +832,7 @@ def build_briefing() -> dict:
         ],
         "news": [{"title": item.get("title")} for item in news],
     }
-    briefing = generate_briefing(context)
+    briefing = generate_briefing(context, force=force)
     briefing["generated_at"] = iso_now()
     briefing["context_counts"] = {
         "tasks": len(tasks),
@@ -764,6 +853,22 @@ def parse_uploaded_notice() -> tuple[str, str, str, str]:
     raw = upload.read(4 * 1024 * 1024)
     if not raw:
         return "", "", "", ""
+
+    if filename.endswith(".pdf"):
+        try:
+            from pypdf import PdfReader
+
+            reader = PdfReader(io.BytesIO(raw))
+            chunks = []
+            for page in reader.pages[:20]:
+                chunks.append(page.extract_text() or "")
+                if sum(len(chunk) for chunk in chunks) >= Config.AI_MAX_INPUT_CHARS:
+                    break
+            text = re.sub(r"\s+", " ", "\n".join(chunks)).strip()
+            if text:
+                return text[: Config.AI_MAX_INPUT_CHARS], "", "", "pdf"
+        except Exception:
+            logger.info("Could not extract text from PDF upload; treating as text.")
 
     if filename.endswith(".eml"):
         try:
@@ -980,6 +1085,7 @@ def bootstrap():
         {
             "profile": profile,
             "branches": branches,
+            "topics": BRANCH_MAPPINGS,
             "stats": get_stats(),
             "college": {
                 "name": Config.COLLEGE_NAME,
@@ -992,6 +1098,7 @@ def bootstrap():
                 "ai_mode": "gemini" if ai_available() else "heuristic",
                 "model": Config.GEMINI_MODEL,
                 "campus_live": bool(Config.COLLEGE_WEBSITE_URL),
+                "social": social_status(),
             },
             "today": date.today().isoformat(),
             "server_time": iso_now(),
@@ -1006,6 +1113,15 @@ def profile():
     patch = request_json()
     if patch.get("branch") and patch["branch"] not in BRANCH_MAPPINGS:
         return json_error("Unsupported engineering branch.")
+    if "news_preferences" in patch:
+        preferences = patch.get("news_preferences") or []
+        if not isinstance(preferences, (list, tuple)):
+            return json_error("News preferences must be a list.")
+        patch["news_preferences"] = [
+            item
+            for item in dict.fromkeys(str(part).strip() for part in preferences)
+            if item in BRANCH_MAPPINGS
+        ][:7]
     updated = update_settings(patch)
     return jsonify({"profile": updated, "stats": get_stats()})
 
@@ -1035,9 +1151,26 @@ def news_api():
 
     force_refresh = (request.args.get("refresh", "false") or "").lower() == "true"
     query = (request.args.get("q") or "").strip()
+    raw_preferences = request.args.get("preferences", "")
+    preferences = [
+        item.strip()
+        for item in raw_preferences.split(",")
+        if item.strip() in BRANCH_MAPPINGS
+    ]
+    if not raw_preferences:
+        preferences = [
+            item for item in (get_settings().get("news_preferences") or [])
+            if item in BRANCH_MAPPINGS
+        ]
 
     try:
         payload = load_news(branch, limit, force_refresh=force_refresh, query=query)
+        if preferences:
+            payload["articles"] = filter_news_by_preferences(
+                payload.get("articles", []), preferences
+            )
+            payload["count"] = len(payload["articles"])
+            payload["preferences"] = preferences
     except Exception:
         logger.exception("News feed failed.")
         return json_error("The news feed is temporarily unavailable. Please try again.", 503)
@@ -1065,6 +1198,23 @@ def college_updates_api():
     return jsonify(payload)
 
 
+@app.get("/api/social-updates")
+def social_updates_api():
+    try:
+        limit = int(request.args.get("limit", 8))
+    except (TypeError, ValueError):
+        return json_error("The limit must be a number.")
+    if not 1 <= limit <= 20:
+        return json_error("Limit must be between 1 and 20.")
+
+    force_refresh = (request.args.get("refresh", "false") or "").lower() == "true"
+    try:
+        return jsonify(load_social(limit, force_refresh=force_refresh))
+    except Exception:
+        logger.exception("Social feed failed.")
+        return json_error("Social updates are temporarily unavailable.", 503)
+
+
 @app.get("/api/opportunities")
 def opportunities_api():
     track = (request.args.get("track") or "All").strip()
@@ -1072,6 +1222,15 @@ def opportunities_api():
     deadline = (request.args.get("deadline") or "").strip()
     query = (request.args.get("q") or "").strip()
     saved_only = (request.args.get("saved", "false") or "").lower() == "true"
+    force_refresh = (request.args.get("refresh", "false") or "").lower() == "true"
+
+    # Curated listings are local; "refresh" rolls expired recurring deadlines
+    # forward rather than pretending that a live provider was contacted.
+    if force_refresh:
+        try:
+            seed_opportunities()
+        except Exception:
+            logger.info("Opportunity roll-forward failed; showing saved listings.")
 
     items = decorate_opportunities(
         list_opportunities(track=track, mode=mode, deadline_window=deadline, query=query)
@@ -1183,8 +1342,8 @@ def summaries():
         limit = int(limit)
     except (TypeError, ValueError):
         limit = 50
-    return jsonify({"count": len(list_summaries(limit=limit, query=query)),
-                    "summaries": list_summaries(limit=limit, query=query)})
+    summaries = list_summaries(limit=limit, query=query)
+    return jsonify({"count": len(summaries), "summaries": summaries})
 
 
 @app.delete("/api/summaries/<summary_id>")
@@ -1342,16 +1501,7 @@ def bookmark_delete(bookmark_id: str):
 @app.get("/api/briefing")
 def briefing():
     force = (request.args.get("refresh", "false") or "").lower() == "true"
-    if force:
-        # Bust the briefing cache by computing a fresh result from live context.
-        cached_news = get_cached_value(
-            cache_key("news", get_settings().get("branch", "Computer Science"), 9)
-        )
-        if not cached_news:
-            load_news(get_settings().get("branch", "Computer Science"), 9)
-        result = build_briefing()
-        return jsonify({"briefing": result, "stats": get_stats()})
-    result = build_briefing()
+    result = build_briefing(force=force)
     return jsonify({"briefing": result, "stats": get_stats()})
 
 
@@ -1400,10 +1550,11 @@ def notifications():
         gmail_alerts = list_gmail_processed_messages(limit=100)
 
         for alert in gmail_alerts:
-            if (
-                alert.get("alert_status") == "open"
-                and int(alert.get("importance", 0)) >= 20
-            ):
+            try:
+                importance = int(alert.get("importance", 0) or 0)
+            except (TypeError, ValueError):
+                importance = 0
+            if alert.get("alert_status") == "open" and importance >= 20:
                 items.append({
                     "type": "gmail",
                     "title": alert.get("subject", "Important Gmail alert"),

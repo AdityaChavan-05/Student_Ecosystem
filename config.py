@@ -9,6 +9,8 @@ without any external credentials.
 from __future__ import annotations
 
 import os
+import secrets
+import tempfile
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -46,8 +48,24 @@ def _default_database_path() -> str:
         probe.write_text("ok", encoding="utf-8")
         probe.unlink()
     except OSError:
-        import tempfile
+        return str(Path(tempfile.gettempdir()) / local.name)
 
+    return str(local)
+
+
+def _default_token_path() -> str:
+    """Return a writable OAuth token path (serverless hosts need /tmp)."""
+    configured = os.getenv("GMAIL_TOKEN_FILE", "").strip()
+    if configured:
+        return configured
+
+    local = BASE_DIR / "instance" / "gmail_token.json"
+    try:
+        local.parent.mkdir(parents=True, exist_ok=True)
+        probe = local.parent / ".write_probe"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink()
+    except OSError:
         return str(Path(tempfile.gettempdir()) / local.name)
 
     return str(local)
@@ -57,7 +75,9 @@ class Config:
     """Application configuration."""
 
     # Flask ---------------------------------------------------------------
-    SECRET_KEY = os.getenv("SECRET_KEY", "student-ecosystem-dev-key")
+    # A random per-process fallback is deliberately safer than a predictable
+    # default. Set SECRET_KEY explicitly when sessions must survive restarts.
+    SECRET_KEY = os.getenv("SECRET_KEY", "").strip() or secrets.token_urlsafe(32)
     DEBUG = _env_bool("FLASK_DEBUG", False)
     MAX_CONTENT_LENGTH = 6 * 1024 * 1024
     JSON_SORT_KEYS = False
@@ -71,10 +91,7 @@ class Config:
         "GOOGLE_REDIRECT_URI",
         "http://127.0.0.1:5000/auth/google/callback",
     )
-    GMAIL_TOKEN_FILE = os.getenv(
-        "GMAIL_TOKEN_FILE",
-        str(BASE_DIR / "instance" / "gmail_token.json"),
-    )
+    GMAIL_TOKEN_FILE = _default_token_path()
 
     # Storage -------------------------------------------------------------
     DATABASE_PATH = _default_database_path()
@@ -137,9 +154,37 @@ class Config:
     # Server --------------------------------------------------------------
     PORT = _env_int("PORT", 5000)
 
+    # Social sources -------------------------------------------------------
+    # Credentials are optional. Without them the UI shows official profile
+    # shortcuts only; it never invents posts.
+    SOCIAL_LINKS_JSON = os.getenv("SOCIAL_LINKS_JSON", "").strip()
+    SOCIAL_CACHE_MINUTES = _env_int("SOCIAL_CACHE_MINUTES", 30)
+
+    LINKEDIN_ACCESS_TOKEN = os.getenv("LINKEDIN_ACCESS_TOKEN", "").strip()
+    LINKEDIN_API_VERSION = os.getenv("LINKEDIN_API_VERSION", "202601").strip()
+    LINKEDIN_AUTHOR_URNS = tuple(
+        item.strip()
+        for item in os.getenv("LINKEDIN_AUTHOR_URNS", "").split(",")
+        if item.strip()
+    )
+
+    INSTAGRAM_ACCESS_TOKEN = os.getenv("INSTAGRAM_ACCESS_TOKEN", "").strip()
+    INSTAGRAM_USER_ID = os.getenv("INSTAGRAM_USER_ID", "").strip()
+    INSTAGRAM_GRAPH_VERSION = os.getenv("INSTAGRAM_GRAPH_VERSION", "v26.0").strip()
+    INSTAGRAM_API_HOST = os.getenv(
+        "INSTAGRAM_API_HOST", "graph.instagram.com"
+    ).strip()
+    INSTAGRAM_DISCOVERY_USERNAMES = tuple(
+        item.strip().lstrip("@")
+        for item in os.getenv("INSTAGRAM_DISCOVERY_USERNAMES", "").split(",")
+        if item.strip()
+    )
+
     # CORS ----------------------------------------------------------------
+    # Same-origin is the default; the SPA does not need wildcard CORS. Add
+    # explicit origins only when a separate frontend is deployed.
     CORS_ORIGINS = [
         origin.strip()
-        for origin in os.getenv("CORS_ORIGINS", "*").split(",")
+        for origin in os.getenv("CORS_ORIGINS", "").split(",")
         if origin.strip()
     ]

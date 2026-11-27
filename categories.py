@@ -59,6 +59,14 @@ BRANCH_MAPPINGS = {
         "smart grids",
         "electrical machines",
     ],
+    "Science and Technology": [
+        "science and technology",
+        "scientific research",
+        "physics research",
+        "chemistry innovation",
+        "space technology",
+        "engineering research",
+    ],
 }
 
 

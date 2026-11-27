@@ -954,11 +954,11 @@ CONTEXT:
 """
 
 
-def generate_briefing(context: dict) -> dict:
+def generate_briefing(context: dict, force: bool = False) -> dict:
     cache_key = "briefing:" + hashlib.sha256(
         json.dumps(context, sort_keys=True, default=str).encode()
     ).hexdigest()[:24]
-    cached = get_cached_value(cache_key)
+    cached = None if force else get_cached_value(cache_key)
     if cached:
         return {**cached, "cached": True}
 

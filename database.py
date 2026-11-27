@@ -284,8 +284,15 @@ def purge_expired_cache() -> int:
 
 
 def is_database_configured() -> bool:
-    """The local SQLite database is always available."""
-    return True
+    """Return True only when SQLite is reachable and writable."""
+    try:
+        init_db()
+        with get_connection() as connection:
+            connection.execute("SELECT 1").fetchone()
+        return True
+    except Exception:
+        logger.warning("SQLite is not available at %s", DB_PATH, exc_info=True)
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -299,6 +306,7 @@ DEFAULT_PROFILE = {
     "semester": "Semester 5",
     "email": "",
     "goal": "Land a strong internship while keeping academics on track",
+    "news_preferences": [],
 }
 
 
@@ -309,7 +317,7 @@ def get_settings() -> dict:
         with get_connection() as connection:
             rows = connection.execute("SELECT key, value FROM settings").fetchall()
         for row in rows:
-            values[row["key"]] = row["value"]
+            values[row["key"]] = _json(row["value"], row["value"])
     except Exception:
         logger.warning("Could not read settings.", exc_info=True)
     return values
@@ -323,12 +331,13 @@ def update_settings(patch: dict) -> dict:
             for key, value in (patch or {}).items():
                 if key not in allowed:
                     continue
+                stored = _dumps(value) if isinstance(value, (list, dict)) else str(value or "")
                 connection.execute(
                     """
                     INSERT INTO settings (key, value) VALUES (?, ?)
                     ON CONFLICT(key) DO UPDATE SET value = excluded.value
                     """,
-                    (key, str(value or "")),
+                    (key, stored),
                 )
     except Exception:
         logger.warning("Could not save settings.", exc_info=True)

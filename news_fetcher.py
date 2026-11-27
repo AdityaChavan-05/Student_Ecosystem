@@ -29,8 +29,8 @@ from config import Config
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_LIMIT = 9
-MAX_LIMIT = 24
+DEFAULT_LIMIT = Config.DEFAULT_NEWS_LIMIT
+MAX_LIMIT = Config.MAX_NEWS_LIMIT
 
 GOOGLE_NEWS_URL = (
     "https://news.google.com/rss/search?q={query}&hl=en-IN&gl=IN&ceid=IN:en"
@@ -133,6 +133,18 @@ BRANCH_FILTERS = {
         "motor",
         "solar",
         "renewable",
+    ),
+    "Science and Technology": (
+        "science",
+        "research",
+        "physics",
+        "chemistry",
+        "space",
+        "quantum",
+        "laboratory",
+        "discovery",
+        "innovation",
+        "technology",
     ),
 }
 
@@ -347,7 +359,8 @@ def get_news(branch: str = "Computer Science", limit: int = DEFAULT_LIMIT) -> li
 
     # Keep branch-relevant stories, but never render an empty feed in a niche branch.
     relevant = [item for item in collected if _matches_branch(item, branch_name)]
-    others = [item for item in collected if item not in relevant]
+    relevant_ids = {id(item) for item in relevant}
+    others = [item for item in collected if id(item) not in relevant_ids]
     pool = relevant + others
 
     # Rank by recency + real summary text; slice after ranking.

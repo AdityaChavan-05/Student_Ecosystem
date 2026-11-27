@@ -45,12 +45,3 @@ credentials.json
 client_secret*.json
 token.json
 *.token
-# Private credentials
-credentials*.json
-token*.json
-.env
-
-# Private credentials
-credentials*.json
-token*.json
-.env
