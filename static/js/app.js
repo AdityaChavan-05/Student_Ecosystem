@@ -16,8 +16,14 @@ async function boot() {
     const data = await api("/api/bootstrap");
     state.profile = data.profile || state.profile;
     state.branches = data.branches || [];
+    state.topics = data.topics || {};
     state.college = data.college || state.college;
     state.features = data.features || state.features;
+    const social = data.features?.social || {};
+    state.social = {
+      ...social,
+      profiles: social.profiles || social.links || [],
+    };
     state.stats = data.stats || state.stats;
     state.today = data.today || todayISO();
 
@@ -46,40 +52,8 @@ async function boot() {
   updateBadges();
   await route();
 
-// Automatically analyse Gmail messages every 15 minutes.
-let gmailAnalysisRunning = false;
-
-const runAutomaticGmailAnalysis = async () => {
-  if (gmailAnalysisRunning || document.visibilityState !== "visible") {
-    return;
-  }
-
-  gmailAnalysisRunning = true;
-
-  try {
-    const result = await api("/api/gmail/analyse", {
-      method: "POST",
-    });
-
-    console.log(
-      `Automatic Gmail analysis: ${result.processed} checked, ${result.failed} failed.`
-    );
-
-    if (currentView() === "mail") {
-      await loadGmailPriority();
-    }
-  } catch (error) {
-    console.warn("Automatic Gmail analysis unavailable:", error.message);
-  } finally {
-    gmailAnalysisRunning = false;
-  }
-};
-
-// Run once when the website starts.
-runAutomaticGmailAnalysis();
-
-// Repeat every 15 minutes while the page is visible.
-window.setInterval(runAutomaticGmailAnalysis, 15 * 60 * 1000);
+  // Background Gmail analysis is opt-in and reads the server-side preference.
+  configureGmailAutoAnalysis();
 
   // Warm the opportunity + vault data in the background.
   if (!state.loaded.opportunities) {
@@ -96,6 +70,36 @@ window.setInterval(runAutomaticGmailAnalysis, 15 * 60 * 1000);
   if (!state.loaded.vault) {
     fetchVault().catch(() => {});
   }
+}
+
+let gmailAnalysisRunning = false;
+let gmailAnalysisTimer = null;
+
+async function runAutomaticGmailAnalysis() {
+  if (!gmailAutoEnabled() || gmailAnalysisRunning || document.visibilityState !== "visible") {
+    return;
+  }
+  if (!(await checkGmailConnection())) return;
+  gmailAnalysisRunning = true;
+  try {
+    const result = await api("/api/gmail/analyse", { method: "POST" });
+    if (currentView() === "mail") await loadGmailPriority();
+    console.info(`Gmail check: ${result.processed} messages processed.`);
+  } catch (error) {
+    console.warn("Automatic Gmail analysis unavailable:", error.message);
+  } finally {
+    gmailAnalysisRunning = false;
+  }
+}
+
+function configureGmailAutoAnalysis() {
+  if (gmailAnalysisTimer !== null) {
+    window.clearInterval(gmailAnalysisTimer);
+    gmailAnalysisTimer = null;
+  }
+  if (!gmailAutoEnabled()) return;
+  runAutomaticGmailAnalysis();
+  gmailAnalysisTimer = window.setInterval(runAutomaticGmailAnalysis, 15 * 60 * 1000);
 }
 
 function bindInterface() {
@@ -237,6 +241,7 @@ function bindInterface() {
     const branch = event.target.value;
     state.profile.branch = branch;
     state.loaded.news = false;
+    state.filters.newsTopic = "All";
     updateProfileUI();
     try {
       await api("/api/profile", { method: "PATCH", body: { branch } });
@@ -314,6 +319,17 @@ $("#gmail-load-more")?.addEventListener("click", async () => {
   await loadGmailInbox(true);
 });
 
+  $("#mail-form")?.addEventListener("submit", handleMailSubmit);
+  $("#mail-sample")?.addEventListener("click", sampleNotice);
+  $("#mail-file")?.addEventListener("change", (event) => {
+    const name = $("#mail-file-name");
+    const file = event.target.files?.[0];
+    if (name) {
+      name.textContent = file ? file.name : "";
+      name.hidden = !file;
+    }
+  });
+
   /* Vault ---------------------------------------------------------------- */
   $("#vault-add")?.addEventListener("click", () => openVaultModal(null));
   $("#vault-search")?.addEventListener("input", (event) => {
@@ -342,6 +358,21 @@ $("#gmail-load-more")?.addEventListener("click", async () => {
 
   /* Settings ------------------------------------------------------------- */
   $("#settings-form")?.addEventListener("submit", handleSettingsSubmit);
+  $("#gmail-auto")?.addEventListener("change", (event) => {
+    try {
+      localStorage.setItem("se-gmail-auto", String(event.target.checked));
+      configureGmailAutoAnalysis();
+      toast(
+        event.target.checked
+          ? "Gmail will be checked quietly every 15 minutes while this tab is open."
+          : "Automatic Gmail analysis is off.",
+        { title: "Privacy setting saved", type: "info" }
+      );
+    } catch {
+      toast("This browser blocked saving the preference.", { type: "error", title: "Not saved" });
+      event.target.checked = false;
+    }
+  });
 
   /* Routing -------------------------------------------------------------- */
   window.addEventListener("hashchange", () => {

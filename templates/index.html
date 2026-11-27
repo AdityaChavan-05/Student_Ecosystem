@@ -262,6 +262,7 @@
           </div>
 
           <div class="source-strip" id="campus-source"></div>
+          <div class="chip-row link-row" id="campus-shortcuts" aria-label="Official college and social profiles"></div>
 
           <div class="toolbar">
             <div class="search-field">
@@ -346,6 +347,7 @@
             </div>
             <span class="toolbar-note" id="news-count-label"></span>
           </div>
+          <div class="chip-row" id="news-topics" role="tablist" aria-label="Filter news by topic"></div>
 
           <div class="news-grid" id="news-grid"></div>
         </section>
@@ -354,59 +356,75 @@
         <section class="view" id="view-mail" data-view="mail">
           <div class="view-head">
             <div>
-              <span class="eyebrow">CONNECTED GMAIL</span>
-              <h2>Your inbox, organised.</h2>
-              <p>Review your emails and keep important MIT-WPU announcements, exams and deadlines in focus.</p>
+              <span class="eyebrow">MAIL &amp; NOTICE SUMMARIZER</span>
+              <h2>Turn long notices into next steps.</h2>
+              <p>Paste a notice or upload a file for a TL;DR with deadlines and actions — or connect Gmail to review your inbox.</p>
             </div>
           </div>
 
           <div class="mail-layout">
-            <section class="panel gmail-inbox-panel">
-              <div class="panel-head">
-                <div>
-                  <span class="eyebrow">CONNECTED GMAIL</span>
-                  <h3>Your inbox</h3>
-                  <p id="gmail-status">Checking Gmail connection...</p>
+            <section class="panel mail-composer">
+              <div class="panel-head"><div><span class="eyebrow">NOTICE SUMMARIZER</span><h3>Summarize a notice</h3></div></div>
+              <form id="mail-form" class="mail-form">
+                <div class="field-row">
+                  <label class="field"><span>Subject (optional)</span><input id="mail-subject" type="text" placeholder="End-semester timetable" autocomplete="off"></label>
+                  <label class="field"><span>Sender (optional)</span><input id="mail-sender" type="text" placeholder="examination@mitwpu.edu.in" autocomplete="off"></label>
                 </div>
-
-                <div class="gmail-actions">
-                  <button type="button" class="btn btn-primary" id="gmail-refresh">
-                    Refresh inbox
-                  </button>
-                  <button type="button" class="btn btn-secondary" id="gmail-analyse">
-                    Analyse Gmail
-                  </button>
-                </div>
-              </div>
-
-              <div class="gmail-priority-section">
-                <h3>Important Student Alerts</h3>
-                <p class="section-description">
-                  Exams, assignments, fees and important college deadlines.
-                </p>
-                <div id="gmail-priority-list">
-                  <div class="empty-state compact">
-                    <p>No analysed alerts yet. Select Analyse Gmail to begin.</p>
+                <label class="file-drop" for="mail-file">
+                  <span class="file-drop-icon"><svg class="icon"><use href="#i-upload"/></svg></span>
+                  <span class="file-drop-copy"><strong>Upload a notice</strong><small>.txt, .md, .eml or .pdf — processed in memory</small></span>
+                  <span class="file-name" id="mail-file-name" hidden></span>
+                  <input id="mail-file" type="file" accept=".txt,.md,.eml,.pdf,text/plain,message/rfc822,application/pdf" hidden>
+                </label>
+                <label class="field"><span>Notice text</span><textarea id="mail-body" rows="8" placeholder="Paste the notice here…"></textarea></label>
+                <div class="mail-form-foot">
+                  <label class="check-field"><input id="mail-create-task" type="checkbox"><span>Create a task from the top action</span></label>
+                  <div class="mail-form-actions">
+                    <button class="btn btn-ghost btn-sm" id="mail-sample" type="button">Load sample</button>
+                    <button class="btn btn-primary" id="mail-submit" type="submit"><svg class="icon"><use href="#i-sparkles"/></svg>Summarize notice</button>
                   </div>
                 </div>
+              </form>
+              <div class="mail-result" id="mail-result">
+                <div class="empty-state compact"><div class="empty-icon"><svg class="icon"><use href="#i-mail"/></svg></div><h3>Your summary will appear here</h3><p>TL;DR, deadlines, action items and a category — structured, scannable and saved to your history.</p></div>
               </div>
-
-              <div id="gmail-message-list">
-                <div class="empty-state compact">
-                  <p>Loading your emails...</p>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                class="btn btn-secondary"
-                id="gmail-load-more"
-                style="display: none; margin-top: 16px; width: 100%;"
-              >
-                Load More Emails
-              </button>
             </section>
+
+            <aside class="panel mail-history-panel">
+              <div class="panel-head"><div><span class="eyebrow">HISTORY</span><h3>Recent summaries</h3></div></div>
+              <div class="mail-history" id="mail-history"></div>
+            </aside>
           </div>
+
+          <section class="panel gmail-inbox-panel">
+            <div class="panel-head">
+              <div>
+                <span class="eyebrow">CONNECTED GMAIL</span>
+                <h3>Your inbox</h3>
+                <p id="gmail-status">Checking Gmail connection...</p>
+                <a id="gmail-connect" class="btn btn-primary btn-sm" href="/auth/google" hidden>Connect Gmail</a>
+              </div>
+
+              <div class="gmail-actions">
+                <button type="button" class="btn btn-primary" id="gmail-refresh">Refresh inbox</button>
+                <button type="button" class="btn btn-secondary" id="gmail-analyse">Analyse Gmail</button>
+              </div>
+            </div>
+
+            <div class="gmail-priority-section">
+              <h3>Important Student Alerts</h3>
+              <p class="section-description">Exams, assignments, fees and important college deadlines.</p>
+              <div id="gmail-priority-list">
+                <div class="empty-state compact"><p>No analysed alerts yet. Select Analyse Gmail to begin.</p></div>
+              </div>
+            </div>
+
+            <div id="gmail-message-list">
+              <div class="empty-state compact"><p>Loading your emails...</p></div>
+            </div>
+
+            <button type="button" class="btn btn-secondary" id="gmail-load-more" style="display: none; margin-top: 16px; width: 100%;">Load More Emails</button>
+          </section>
         </section>
         <!-- ============ END MAIL ============ -->
 
@@ -505,7 +523,7 @@
             <div>
               <span class="eyebrow">SETTINGS</span>
               <h2>Make it yours.</h2>
-              <p>Your branch shapes the news feed and vault. Nothing leaves this device except the text you choose to summarize.</p>
+              <p>Your branch and interests shape the news feed and vault. Notice text you summarize is analyzed by the configured AI service; connected Gmail is read only when you explicitly ask or enable background analysis.</p>
             </div>
           </div>
 
@@ -520,6 +538,7 @@
                   <label class="field"><span>Semester</span><input id="settings-semester" type="text" placeholder="Semester 5"></label>
                 </div>
                 <label class="field"><span>This semester's goal</span><input id="settings-goal" type="text" placeholder="Land a strong internship while keeping academics on track"></label>
+                <div class="field"><span>News interests</span><div class="chip-row pref-row" id="settings-news-preferences" aria-label="News interests"></div><small>Your main branch is always included in the briefing.</small></div>
                 <div class="form-foot">
                   <span class="form-note" id="settings-note"></span>
                   <button type="submit" class="btn btn-primary">Save changes</button>
@@ -530,6 +549,8 @@
             <section class="panel">
               <div class="panel-head"><div><span class="eyebrow">SYSTEM</span><h3>Under the hood</h3></div></div>
               <div class="status-list" id="settings-status"></div>
+              <label class="check-field privacy-toggle"><input id="gmail-auto" type="checkbox"><span>Analyse connected Gmail automatically every 15 minutes while this tab is open</span></label>
+              <p class="section-description">Off by default. Gmail messages are read on the server only after you connect an authorized account. You can also run analysis manually from the Mail view.</p>
               <div class="settings-links">
                 <a href="/api/health" target="_blank" rel="noopener">Health check <svg class="icon"><use href="#i-external"/></svg></a>
                 <a href="/api/bootstrap" target="_blank" rel="noopener">Bootstrap payload <svg class="icon"><use href="#i-external"/></svg></a>

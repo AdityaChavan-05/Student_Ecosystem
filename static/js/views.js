@@ -15,7 +15,8 @@ async function fetchCampus(limit = 14, force = false) {
   state.campusCategories = data.categories || {};
   state.campusStatus = data.status || null;
   state.campusUpdated = data.updated_at || "";
-  state.loaded.campus = true;
+  // Only a full fetch may satisfy later full-view loads; teasers stay partial.
+  state.loaded.campus = limit >= 14;
   updateBadges();
   return data;
 }
@@ -36,7 +37,7 @@ async function fetchNews(limit = 12, force = false) {
   );
   state.news = data.articles || [];
   state.newsMeta = data;
-  state.loaded.news = true;
+  state.loaded.news = limit >= 12;
   return data;
 }
 
@@ -63,7 +64,7 @@ async function fetchVault(force = false) {
 async function fetchSummaries(force = false) {
   const data = await api(`/api/summaries${force ? `?t=${Date.now()}` : ""}`);
   state.summaries = data.summaries || [];
-  state.loaded.mail = true;
+  state.loaded.summaries = true;
   return data;
 }
 
@@ -132,7 +133,7 @@ async function loadOverview(force = false) {
     ];
     if (!state.loaded.opportunities) jobs.push(fetchOpportunities());
     if (!state.loaded.vault) jobs.push(fetchVault());
-    if (!state.loaded.mail) jobs.push(fetchSummaries());
+    if (!state.loaded.summaries) jobs.push(fetchSummaries());
 
     const results = await Promise.allSettled(jobs);
     const failures = results.filter((result) => result.status === "rejected");
@@ -486,12 +487,26 @@ function renderQuickTiles() {
    -------------------------------------------------------------------------- */
 
 async function loadCampusView(force = false) {
-  if (!state.loaded.campus || force) {
+  if (!state.loaded.campus || force || (state.campus || []).length < 14) {
     const grid = $("#campus-grid");
     if (grid) grid.innerHTML = skeletonCards(4);
     await fetchCampus(14, force);
   }
   renderCampus();
+}
+
+const HUB_GROUPS = {
+  Notices: ["Notice", "Academic", "Administration", "General"],
+  Events: ["Event", "Club"],
+  Examination: ["Examination"],
+  Placement: ["Placement"],
+  Social: ["Social"],
+};
+
+function matchesCampusGroup(item, category) {
+  if (category === "All") return true;
+  const group = HUB_GROUPS[category];
+  return group ? group.includes(item.category) : item.category === category;
 }
 
 function renderCampus() {
@@ -502,12 +517,12 @@ function renderCampus() {
   const category = state.filters.campusCategory;
 
   const filtered = all.filter((item) => {
-    const matchesCategory = category === "All" || item.category === category;
     const haystack = `${item.title} ${item.description} ${(item.tags || []).join(" ")} ${item.category}`.toLowerCase();
-    return matchesCategory && (!query || haystack.includes(query));
+    return matchesCampusGroup(item, category) && (!query || haystack.includes(query));
   });
 
   renderCampusSource();
+  renderCampusShortcuts();
   renderCampusCategories();
   grid.classList.add("feed-grid");
 
@@ -531,7 +546,7 @@ function renderCampusSource() {
   if (!container) return;
   const status = state.campusStatus || {};
   const live = status.mode === "live";
-  const configured = state.college?.url || "";
+  const configured = safeUrl(state.college?.url);
   container.className = `source-strip ${live ? "" : "curated"}`;
   container.innerHTML = `
     <span class="live-dot"></span>
@@ -539,10 +554,31 @@ function renderCampusSource() {
     <span class="sep">·</span>
     <span>${live ? `${status.live_count || 0} live links` : "Official site not reachable from this environment"}</span>
     <span class="sep">·</span>
-    <span>${configured ? esc(configured.replace(/^https?:\/\//, "")) : "No college URL configured"}</span>
+    ${configured ? `<a href="${esc(configured)}" target="_blank" rel="noopener noreferrer">${esc(configured.replace(/^https?:\/\//, ""))}</a>` : "<span>No college URL configured</span>"}
     <span class="spacer"></span>
     <span>${state.campusUpdated ? `Updated ${timeAgo(state.campusUpdated)}` : "Just now"}</span>
     ${state.features.ai ? `<span class="pill pill-primary">${icon("sparkles")}AI enriched</span>` : `<span class="pill pill-soft">Local summaries</span>`}`;
+}
+
+function renderCampusShortcuts() {
+  const container = $("#campus-shortcuts");
+  if (!container) return;
+  const links = [];
+  const collegeUrl = safeUrl(state.college?.url);
+  if (collegeUrl) links.push({ label: "Official college website", url: collegeUrl, platform: "web" });
+  for (const profile of state.social?.profiles || []) {
+    const url = safeUrl(profile.url);
+    if (url) links.push({ label: profile.label || profile.platform, url, platform: profile.platform });
+  }
+  if (!links.length) {
+    container.innerHTML = `<span class="toolbar-note">Configure official profile links in SOCIAL_LINKS_JSON to show shortcuts here.</span>`;
+    return;
+  }
+  container.innerHTML = links.map((link) => `
+    <a class="chip link-chip" href="${esc(link.url)}" target="_blank" rel="noopener noreferrer">
+      ${icon(link.platform === "linkedin" ? "users" : link.platform === "instagram" ? "campus" : "external")}
+      ${esc(link.label)} ${icon("external")}
+    </a>`).join("");
 }
 
 function renderCampusCategories() {
@@ -550,14 +586,31 @@ function renderCampusCategories() {
   if (!container) return;
   const counts = {};
   (state.campus || []).forEach((item) => {
-    counts[item.category] = (counts[item.category] || 0) + 1;
+    const key = item.category || "General";
+    counts[key] = (counts[key] || 0) + 1;
   });
-  const categories = ["All", ...Object.keys(counts).sort((a, b) => counts[b] - counts[a])];
+  const grouped = new Set(Object.values(HUB_GROUPS).flat());
+  const groups = Object.keys(HUB_GROUPS).filter((group) =>
+    HUB_GROUPS[group].some((category) => counts[category])
+  );
+  const categories = [
+    "All",
+    ...groups,
+    ...Object.keys(counts)
+      .filter((category) => !grouped.has(category))
+      .sort((a, b) => counts[b] - counts[a]),
+  ];
+  const countFor = (category) =>
+    category === "All"
+      ? (state.campus || []).length
+      : HUB_GROUPS[category]
+        ? HUB_GROUPS[category].reduce((sum, key) => sum + (counts[key] || 0), 0)
+        : counts[category] || 0;
   container.innerHTML = categories
     .map(
       (category) => `
       <button class="chip ${state.filters.campusCategory === category ? "active" : ""}" type="button" role="tab" aria-selected="${state.filters.campusCategory === category}" data-action="filter-campus-category" data-value="${esc(category)}">
-        ${esc(category)} ${category === "All" ? `<span class="count">${state.campus.length}</span>` : `<span class="count">${counts[category]}</span>`}
+        ${esc(category)} <span class="count">${countFor(category)}</span>
       </button>`
     )
     .join("");
@@ -590,7 +643,7 @@ function campusCard(item) {
         ${actions.length ? `<div class="ai-actions-label">What to do</div><ul class="ai-actions">${actions.map((action) => `<li>${esc(action)}</li>`).join("")}</ul>` : ""}
       </div>
       <div class="card-foot">
-        <span class="card-meta">${item.curated ? icon("book") : icon("campus")}<span>${item.curated ? "Curated guide" : "MIT-WPU official"}${published ? ` · ${published}` : ""}</span></span>
+        <span class="card-meta">${item.curated ? icon("book") : item.origin ? icon("users") : icon("campus")}<span>${esc(item.curated ? "Curated guide" : item.source || "MIT-WPU official")}${published ? ` · ${published}` : ""}</span></span>
         <span class="spacer"></span>
         <button class="icon-action" type="button" title="Add to tasks" aria-label="Add to tasks" data-action="task-from" data-kind="campus" data-id="${esc(item.id)}">${icon("plus")}</button>
         ${url ? `<a class="icon-action" href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="Open official source" aria-label="Open official source">${icon("external")}</a>` : ""}
@@ -606,7 +659,7 @@ async function loadOpportunitiesView(force = false) {
   if (!state.loaded.opportunities || force) {
     const grid = $("#opp-grid");
     if (grid) grid.innerHTML = skeletonCards(6);
-    await fetchOpportunities(false);
+    await fetchOpportunities(force);
     // Refresh saved flags from server.
     if (!state.loaded.saved) {
       try {
@@ -763,19 +816,38 @@ async function loadNewsView(force = false) {
   renderNews();
 }
 
+function renderNewsTopics() {
+  const container = $("#news-topics");
+  if (!container) return;
+  const topics = (state.topics && state.topics[state.profile.branch]) || [];
+  if (!topics.length) {
+    container.innerHTML = "";
+    return;
+  }
+  container.innerHTML = ["All", ...topics].map((topic) => `
+    <button class="chip ${state.filters.newsTopic === topic ? "active" : ""}" type="button" data-action="filter-news-topic" data-value="${esc(topic)}">
+      ${esc(topic === "All" ? "All topics" : topic)}
+    </button>`).join("");
+}
+
 function renderNews() {
   const grid = $("#news-grid");
   if (!grid) return;
   const query = state.filters.newsQuery.trim().toLowerCase();
+  const topic = state.filters.newsTopic;
   const filtered = (state.news || []).filter((item) => {
-    if (!query) return true;
     const haystack = `${item.title} ${item.description} ${item.source} ${(item.tags || []).join(" ")} ${(item.bullets || []).join(" ")}`.toLowerCase();
-    return haystack.includes(query);
+    const matchesTopic = topic === "All" || haystack.includes(topic.toLowerCase());
+    return matchesTopic && (!query || haystack.includes(query));
   });
 
   renderNewsSource();
+  renderNewsTopics();
   const countLabel = $("#news-count-label");
-  if (countLabel) countLabel.textContent = `${plural(filtered.length, "briefing")} for ${state.profile.branch}`;
+  if (countLabel) {
+    const scope = topic === "All" ? state.profile.branch : topic;
+    countLabel.textContent = `${plural(filtered.length, "briefing")} · ${scope}`;
+  }
 
   if (!filtered.length) {
     grid.innerHTML = emptyState(

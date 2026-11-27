@@ -39,6 +39,8 @@ const state = {
     goal: "",
   },
   branches: [],
+  topics: {},
+  social: { profiles: [], status: {} },
   college: {
     name: "MIT World Peace University",
     short_name: "MIT-WPU",
@@ -66,7 +68,7 @@ const state = {
   savedKeys: new Set(),
   briefing: null,
   currentSummary: null,
-  loaded: {},
+  loaded: { summaries: false, gmailInbox: false },
   filters: {
     campusCategory: "All",
     campusQuery: "",
@@ -76,6 +78,7 @@ const state = {
     oppQuery: "",
     oppSaved: false,
     newsQuery: "",
+    newsTopic: "All",
     vaultQuery: "",
     vaultType: "All",
     vaultScope: "All",
@@ -430,7 +433,13 @@ function currentTheme() {
 
 function applyTheme(theme, persist = true) {
   document.documentElement.setAttribute("data-theme", theme);
-  if (persist) localStorage.setItem("se-theme", theme);
+  if (persist) {
+    try {
+      localStorage.setItem("se-theme", theme);
+    } catch {
+      /* storage can be disabled; the theme still applies for this page */
+    }
+  }
   const toggle = $("#theme-toggle");
   if (toggle) toggle.setAttribute("aria-pressed", String(theme === "dark"));
   const meta = document.querySelector('meta[name="theme-color"]');
@@ -536,6 +545,15 @@ function setActiveView(view) {
 function currentView() {
   const hash = (window.location.hash || "").replace(/^#/, "").split("?")[0];
   return VIEW_META[hash] ? hash : "overview";
+}
+
+// Background Gmail analysis is opt-in; it never runs without this preference.
+function gmailAutoEnabled() {
+  try {
+    return localStorage.getItem("se-gmail-auto") === "true";
+  } catch {
+    return false;
+  }
 }
 
 async function route() {

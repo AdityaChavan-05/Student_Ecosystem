@@ -552,18 +552,20 @@ function renderMailHistory() {
 }
 
 async function loadMailView(force = false) {
-  if (!state.loaded.mail || force) {
+  if (!state.loaded.summaries || force) {
     const history = $("#mail-history");
-
-    if (history) {
-      history.innerHTML = skeletonRows(4);
-    }
-
+    if (history) history.innerHTML = skeletonRows(4);
     await fetchSummaries(force);
-    await loadGmailInbox();
   }
 
-  await loadGmailPriority();
+  const connected = await loadGmailInbox();
+  state.loaded.gmailInbox = true;
+  if (connected) {
+    await loadGmailPriority();
+  } else {
+    const list = $("#gmail-priority-list");
+    if (list) list.innerHTML = `<div class="empty-state compact"><p>Connect Gmail and analyse your inbox to see important alerts here.</p></div>`;
+  }
 
   renderMailHistory();
 
@@ -574,19 +576,40 @@ async function loadMailView(force = false) {
 
 let gmailNextPageToken = null;
 
+async function checkGmailConnection() {
+  const status = $("#gmail-status");
+  const connect = $("#gmail-connect");
+  try {
+    const data = await api("/api/gmail/status");
+    if (status) status.textContent = data.connected ? "Gmail connected" : "Gmail is not connected yet";
+    if (connect) connect.hidden = Boolean(data.connected);
+    state.gmailConnected = Boolean(data.connected);
+    return state.gmailConnected;
+  } catch {
+    if (status) status.textContent = "Gmail connection status is unavailable";
+    if (connect) connect.hidden = true;
+    state.gmailConnected = false;
+    return false;
+  }
+}
+
 async function loadGmailInbox(loadMore = false) {
   const container = $("#gmail-message-list");
   const status = $("#gmail-status");
   const button = $("#gmail-load-more");
 
-  if (!container) return;
+  if (!container) return false;
 
   if (!loadMore) {
     gmailNextPageToken = null;
     container.innerHTML = `<p>Loading emails...</p>`;
+    if (!(await checkGmailConnection())) {
+      container.innerHTML = `<div class="empty-state compact"><p>Connect Gmail to review your inbox here. You can still paste a notice above.</p></div>`;
+      return false;
+    }
   }
 
-  if (loadMore && !gmailNextPageToken) return;
+  if (loadMore && !gmailNextPageToken) return true;
 
   if (button) {
     button.disabled = true;
@@ -648,8 +671,9 @@ async function loadGmailInbox(loadMore = false) {
       button.textContent = "Load More Emails";
     }
   }
+  return true;
 }
- 
+
 async function loadGmailPriority() {
   const container = $("#gmail-priority-list");
   if (!container) return;
@@ -966,6 +990,17 @@ function renderSettings() {
     branch.innerHTML = (state.branches || []).map((item) => `<option value="${esc(item)}" ${item === state.profile.branch ? "selected" : ""}>${esc(item)}</option>`).join("");
   }
 
+  const preferences = $("#settings-news-preferences");
+  if (preferences) {
+    const selected = new Set([state.profile.branch, ...(state.profile.news_preferences || [])]);
+    preferences.innerHTML = (state.branches || []).map((item) => `
+      <label class="chip pref-chip ${selected.has(item) ? "active" : ""}">
+        <input type="checkbox" value="${esc(item)}" ${selected.has(item) ? "checked" : ""} ${item === state.profile.branch ? "disabled" : ""}>${esc(item)}
+      </label>`).join("");
+  }
+  const auto = $("#gmail-auto");
+  if (auto) auto.checked = gmailAutoEnabled();
+
   const status = $("#settings-status");
   if (status) {
     const stats = state.stats || {};
@@ -973,6 +1008,7 @@ function renderSettings() {
       <div class="status-row">${icon("sparkles")}<span>AI summaries</span><strong class="${state.features.ai ? "ok" : "warn"}">${state.features.ai ? "Gemini live" : "Local fallback"}</strong></div>
       <div class="status-row">${icon("layers")}<span>Model</span><strong class="${state.features.ai ? "ok" : "off"}">${esc(state.features.model || "Not configured")}</strong></div>
       <div class="status-row">${icon("campus")}<span>Campus feed</span><strong class="${state.campusStatus?.mode === "live" ? "ok" : "warn"}">${state.campusStatus?.mode === "live" ? "Live scan" : "Curated guide"}</strong></div>
+      <div class="status-row">${icon("users")}<span>Social APIs</span><strong class="${state.social?.status?.linkedin || state.social?.status?.instagram ? "ok" : "off"}">${state.social?.status?.linkedin || state.social?.status?.instagram ? "Connected" : "Profile links only"}</strong></div>
       <div class="status-row">${icon("book")}<span>Local database</span><strong class="ok">SQLite ready</strong></div>
       <div class="status-row">${icon("tasks")}<span>Tasks &amp; summaries</span><strong class="ok">${stats.tasks_open || 0} open · ${stats.summaries || 0} saved</strong></div>
       <div class="status-row">${icon("bookmark")}<span>Bookmarks</span><strong class="ok">${stats.bookmarks || 0} saved</strong></div>`;
@@ -987,6 +1023,7 @@ async function handleSettingsSubmit(event) {
     year: ($("#settings-year")?.value || "").trim(),
     semester: ($("#settings-semester")?.value || "").trim(),
     goal: ($("#settings-goal")?.value || "").trim(),
+    news_preferences: $$("#settings-news-preferences input:checked").map((input) => input.value),
   };
   const note = $("#settings-note");
   try {
@@ -1053,6 +1090,21 @@ async function handleAction(action, data, button) {
   if (action === "filter-campus-category") {
     state.filters.campusCategory = data.value || "All";
     renderCampus();
+    return;
+  }
+
+  if (action === "filter-news-topic") {
+    state.filters.newsTopic = data.value || "All";
+    renderNews();
+    return;
+  }
+
+  if (action === "retry-mail") {
+    const form = $("#mail-form");
+    if (form) {
+      if (typeof form.requestSubmit === "function") form.requestSubmit();
+      else form.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+    }
     return;
   }
 
