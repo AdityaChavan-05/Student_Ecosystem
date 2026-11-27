@@ -13,7 +13,9 @@ Any failure is logged and skipped; the function always returns a list.
 from __future__ import annotations
 
 import logging
+import random
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -189,19 +191,35 @@ def parse_date(date_string: str) -> str | None:
         return None
 
 
-def fetch_rss(url: str, source_hint: str = "") -> list[dict]:
-    """Download and parse one RSS feed. Returns [] on any failure."""
-    try:
-        response = SESSION.get(url, timeout=Config.REQUEST_TIMEOUT)
-        response.raise_for_status()
-        feed = feedparser.parse(response.content)
-    except requests.RequestException as error:
-        logger.info("RSS request failed (%s): %s", source_hint or url, error)
-        return []
-    except Exception:
-        logger.exception("Unexpected RSS parsing error for %s", source_hint or url)
-        return []
+def _jittered_delay(seconds: float) -> float:
+    """Add small jitter so concurrent workers do not retry in lockstep."""
+    return max(0.0, seconds) * random.uniform(0.75, 1.25)
 
+
+def _retry_delay(response=None, attempt: int = 1) -> float | None:
+    """Return a bounded backoff, or None when we should respect the limit."""
+    if attempt >= max(1, Config.NEWS_FETCH_ATTEMPTS):
+        return None
+
+    retry_after = None
+    headers = getattr(response, "headers", None)
+    if headers:
+        try:
+            retry_after = float(headers.get("Retry-After", ""))
+        except (TypeError, ValueError):
+            retry_after = None
+    if retry_after is not None:
+        # A long Retry-After means the provider wants us to stop, not sleep.
+        if retry_after > Config.NEWS_RETRY_MAX_SECONDS:
+            return None
+        return _jittered_delay(retry_after)
+
+    backoff = Config.NEWS_RETRY_BASE_SECONDS * (2 ** (attempt - 1))
+    return _jittered_delay(min(backoff, Config.NEWS_RETRY_MAX_SECONDS))
+
+
+def _entries_to_articles(feed, source_hint: str = "") -> list[dict]:
+    """Convert a parsed feed into the article shape used by the app."""
     articles = []
     for entry in getattr(feed, "entries", []) or []:
         title = clean_text(entry.get("title", ""))
@@ -237,6 +255,64 @@ def fetch_rss(url: str, source_hint: str = "") -> list[dict]:
             }
         )
     return articles
+
+
+def _fetch_rss_status(url: str, source_hint: str = "") -> tuple[list[dict], str]:
+    """Download one RSS feed with a single bounded retry on transient errors.
+
+    Returns ``(articles, status)`` where status is ``ok``, ``empty``,
+    ``throttled`` or ``error``. Callers can use ``throttled`` to prefer a cached
+    feed instead of replacing it with a curated fallback.
+    """
+    throttled = False
+    for attempt in range(1, max(1, Config.NEWS_FETCH_ATTEMPTS) + 1):
+        try:
+            response = SESSION.get(url, timeout=Config.REQUEST_TIMEOUT)
+            if getattr(response, "status_code", 200) == 429:
+                throttled = True
+                delay = _retry_delay(response, attempt)
+                if delay is not None:
+                    logger.info("%s is throttled; retrying once with backoff.", source_hint or url)
+                    time.sleep(delay)
+                    continue
+                logger.info("%s is throttled; using cached or alternate sources.", source_hint or url)
+                return [], "throttled"
+            response.raise_for_status()
+            articles = _entries_to_articles(feedparser.parse(response.content), source_hint)
+            return articles, "ok" if articles else "empty"
+        except requests.HTTPError as error:
+            error_response = getattr(error, "response", None)
+            status_code = getattr(error_response, "status_code", None)
+            if status_code == 429:
+                throttled = True
+                delay = _retry_delay(error_response, attempt)
+                if delay is not None:
+                    time.sleep(delay)
+                    continue
+                return [], "throttled"
+            if status_code is not None and 500 <= status_code < 600:
+                delay = _retry_delay(error_response, attempt)
+                if delay is not None:
+                    time.sleep(delay)
+                    continue
+            logger.info("RSS request failed (%s): %s", source_hint or url, error)
+            return [], "error"
+        except requests.RequestException as error:
+            delay = _retry_delay(None, attempt)
+            if delay is not None:
+                time.sleep(delay)
+                continue
+            logger.info("RSS request failed (%s): %s", source_hint or url, error)
+            return [], "error"
+        except Exception:
+            logger.exception("Unexpected RSS parsing error for %s", source_hint or url)
+            return [], "error"
+    return [], "throttled" if throttled else "error"
+
+
+def fetch_rss(url: str, source_hint: str = "") -> list[dict]:
+    """Download and parse one RSS feed. Returns [] on any failure."""
+    return _fetch_rss_status(url, source_hint)[0]
 
 
 def _build_query(topics: list[str]) -> str:
@@ -319,11 +395,11 @@ def fetch_publication_feeds(per_feed: int = 12) -> list[dict]:
     return collected
 
 
-def get_news(branch: str = "Computer Science", limit: int = DEFAULT_LIMIT) -> list[dict]:
-    """Fetch engineering news for a branch (or topic list).
+def fetch_news(branch: str = "Computer Science", limit: int = DEFAULT_LIMIT) -> dict:
+    """Fetch engineering news and report source health alongside the articles.
 
-    Returns a list of dicts with ``fallback`` set to False. If every source
-    fails, a clearly-marked curated reading list is returned instead.
+    ``throttled`` tells the app layer that Google/Bing asked it to slow down,
+    so a recently cached feed can be reused instead of a curated fallback.
     """
     try:
         limit = max(1, min(int(limit), MAX_LIMIT))
@@ -340,16 +416,27 @@ def get_news(branch: str = "Computer Science", limit: int = DEFAULT_LIMIT) -> li
     topics = list(dict.fromkeys([*topics, *GENERAL_CATEGORIES]))
     query = _build_query(topics)
     if not query:
-        return _with_fallback([], branch_name, limit)
+        return {
+            "articles": _with_fallback([], branch_name, limit),
+            "throttled": False,
+            "source_status": {},
+            "branch": branch_name,
+        }
 
     encoded = quote(query, safe="")
     collected: list[dict] = []
 
     # Tier 1: Google News (broad, fresh, but often headline-only).
-    collected.extend(fetch_rss(GOOGLE_NEWS_URL.format(query=encoded), "Google News"))
+    google_articles, google_status = _fetch_rss_status(
+        GOOGLE_NEWS_URL.format(query=encoded), "Google News"
+    )
+    collected.extend(google_articles)
 
     # Tier 2: Bing News.
-    collected.extend(fetch_rss(BING_NEWS_URL.format(query=encoded), "Bing News"))
+    bing_articles, bing_status = _fetch_rss_status(
+        BING_NEWS_URL.format(query=encoded), "Bing News"
+    )
+    collected.extend(bing_articles)
 
     # Tier 3: curated publication feeds — these carry real summaries, so always
     # pull them; ranking below decides what reaches the top of the feed.
@@ -370,7 +457,17 @@ def get_news(branch: str = "Computer Science", limit: int = DEFAULT_LIMIT) -> li
         article["branch"] = branch_name
         article["fallback"] = False
 
-    return _with_fallback(pool[: max(limit, 3)], branch_name, limit)
+    return {
+        "articles": _with_fallback(pool[: max(limit, 3)], branch_name, limit),
+        "throttled": "throttled" in (google_status, bing_status),
+        "source_status": {"google": google_status, "bing": bing_status},
+        "branch": branch_name,
+    }
+
+
+def get_news(branch: str = "Computer Science", limit: int = DEFAULT_LIMIT) -> list[dict]:
+    """Backward-compatible wrapper returning only the article list."""
+    return fetch_news(branch, limit=limit)["articles"]
 
 
 def _with_fallback(articles: list[dict], branch: str, limit: int) -> list[dict]:

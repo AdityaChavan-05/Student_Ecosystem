@@ -8,6 +8,7 @@ a deterministic fallback, which is exactly what these tests assert.
 from __future__ import annotations
 
 import io
+import json
 import os
 import tempfile
 from pathlib import Path
@@ -481,3 +482,307 @@ def test_unknown_api_returns_json_404(client):
     response = client.get("/api/does-not-exist")
     assert response.status_code == 404
     assert "error" in response.get_json()
+
+
+# ---------------------------------------------------------------------------
+# Prompt rendering and AI response handling (no real API key or network)
+# ---------------------------------------------------------------------------
+
+
+def test_notice_prompt_preserves_json_braces(monkeypatch):
+    import ai_summarizer
+
+    captured = {}
+
+    def fake_generate(prompt, json_mode=True):
+        captured["prompt"] = prompt
+        return json.dumps(
+            {
+                "tldr": "The portal timetable was published.",
+                "category": "Examination",
+                "urgency": "high",
+                "action_items": ["Verify your subjects on the portal."],
+                "deadlines": [{"label": "Report changes", "date": "2026-11-28"}],
+                "tags": ["exam"],
+            }
+        )
+
+    monkeypatch.setattr(ai_summarizer, "ai_available", lambda: True)
+    monkeypatch.setattr(ai_summarizer, "_generate", fake_generate)
+
+    result = ai_summarizer.summarize_notice(
+        "The examination timetable for the unique prompt test was published today.",
+        subject="Prompt regression notice",
+        sender="examination@mitwpu.edu.in",
+    )
+
+    assert result["mode"] == "ai"
+    assert '"tldr"' in captured["prompt"]
+    assert '"action_items"' in captured["prompt"]
+    assert "SUBJECT: Prompt regression notice" in captured["prompt"]
+    assert "TODAY = " in captured["prompt"]
+
+
+def test_news_prompt_preserves_json_braces(monkeypatch):
+    import ai_summarizer
+
+    captured = {}
+
+    def fake_generate(prompt, json_mode=True):
+        captured["prompt"] = prompt
+        return json.dumps(
+            {
+                "articles": [
+                    {
+                        "index": 0,
+                        "tldr": "A new chip design was announced.",
+                        "bullets": ["It may reduce power use.", "Details are in the paper."],
+                        "tags": ["semiconductors"],
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr(ai_summarizer, "ai_available", lambda: True)
+    monkeypatch.setattr(ai_summarizer, "_generate", fake_generate)
+
+    article = {
+        "title": "Unique semiconductor prompt regression story",
+        "link": "https://example.com/prompt-regression-news",
+        "description": "Researchers described a lower-power chip architecture.",
+    }
+    result = ai_summarizer.summarize_news_batch([article])
+
+    assert result[0]["mode"] == "ai"
+    assert '"articles"' in captured["prompt"]
+    assert '"index": 0' in captured["prompt"]
+    assert "Unique semiconductor prompt regression story" in captured["prompt"]
+
+
+def test_briefing_prompt_preserves_json_braces(monkeypatch):
+    import ai_summarizer
+
+    captured = {}
+
+    def fake_generate(prompt, json_mode=True):
+        captured["prompt"] = prompt
+        return json.dumps(
+            {
+                "headline": "Student prompt regression check",
+                "summary": "A short AI briefing summary.",
+                "priorities": ["Finish the prompt regression task."],
+            }
+        )
+
+    monkeypatch.setattr(ai_summarizer, "ai_available", lambda: True)
+    monkeypatch.setattr(ai_summarizer, "_generate", fake_generate)
+
+    result = ai_summarizer.generate_briefing(
+        {
+            "student": "Prompt Student",
+            "branch": "Computer Science",
+            "tasks": [{"title": "Finish the prompt regression task"}],
+            "campus": [],
+            "opportunities": [],
+            "news": [],
+        },
+        force=True,
+    )
+
+    assert result["mode"] == "ai"
+    assert '"headline"' in captured["prompt"]
+    assert '"summary"' in captured["prompt"]
+    assert '"priorities"' in captured["prompt"]
+    assert "Prompt Student" in captured["prompt"]
+
+
+def test_malformed_ai_responses_fall_back_without_crashing(monkeypatch):
+    import ai_summarizer
+
+    monkeypatch.setattr(ai_summarizer, "ai_available", lambda: True)
+    monkeypatch.setattr(ai_summarizer, "_generate", lambda prompt, json_mode=True: "not json")
+
+    notice = ai_summarizer.summarize_notice(
+        "This is a unique malformed response notice with enough text for extraction.",
+        subject="Malformed response test",
+    )
+    assert notice["mode"] == "heuristic"
+    assert notice["tldr"]
+
+    brief = ai_summarizer.generate_briefing(
+        {"student": "Malformed Student", "branch": "Electronics", "tasks": []},
+        force=True,
+    )
+    assert brief["mode"] == "heuristic"
+    assert brief["summary"]
+
+
+def test_empty_notice_input_is_handled():
+    import ai_summarizer
+
+    assert "Paste an email" in ai_summarizer.summarize_notice("   ")["tldr"]
+
+
+def test_summarize_endpoint_survives_bad_ai_response(client, monkeypatch):
+    import ai_summarizer
+
+    monkeypatch.setattr(ai_summarizer, "ai_available", lambda: True)
+    monkeypatch.setattr(ai_summarizer, "_generate", lambda prompt, json_mode=True: "not json")
+
+    response = client.post(
+        "/api/summarize",
+        json={
+            "text": "A unique route-level malformed response notice with enough text to summarize.",
+            "subject": "Route malformed response test",
+        },
+    )
+    assert response.status_code == 201
+    data = response.get_json()
+    assert data["ai_mode"] == "heuristic"
+    assert data["summary"]["tldr"]
+    client.delete(f"/api/summaries/{data['summary']['id']}")
+
+
+# ---------------------------------------------------------------------------
+# News throttling and shared cache
+# ---------------------------------------------------------------------------
+
+
+def test_rss_429_stops_after_bounded_retry(monkeypatch):
+    import news_fetcher
+
+    calls = []
+
+    class ThrottledResponse:
+        status_code = 429
+        headers = {"Retry-After": "0"}
+        content = b""
+
+        def raise_for_status(self):
+            return None
+
+    def fake_get(url, timeout):
+        calls.append(url)
+        return ThrottledResponse()
+
+    monkeypatch.setattr(news_fetcher.Config, "NEWS_FETCH_ATTEMPTS", 2)
+    monkeypatch.setattr(news_fetcher, "_retry_delay", lambda response=None, attempt=1: 0.0)
+    monkeypatch.setattr(news_fetcher.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(news_fetcher.SESSION, "get", fake_get)
+    monkeypatch.setattr(news_fetcher, "fetch_publication_feeds", lambda per_feed=12: [])
+
+    result = news_fetcher.fetch_news("Computer Science", limit=3)
+
+    assert len(calls) == 4, "two feeds x one retry each; no aggressive loop"
+    assert result["throttled"] is True
+    assert result["source_status"]["google"] == "throttled"
+    assert result["articles"], "a clearly-marked curated list is still returned"
+
+
+def test_news_cache_is_shared_across_limits(monkeypatch):
+    store = {}
+    calls = []
+    articles = [
+        {
+            "title": f"Shared cache article {index}",
+            "link": f"https://example.com/shared-cache-{index}",
+            "description": "A short article description with enough detail for the test.",
+        }
+        for index in range(4)
+    ]
+
+    def fake_get(key, **kwargs):
+        return store.get(key)
+
+    def fake_set(key, value, **kwargs):
+        store[key] = value
+        return True
+
+    def fake_fetch(branch, limit):
+        calls.append(limit)
+        return {"articles": articles, "throttled": False, "source_status": {}}
+
+    monkeypatch.setattr(application, "get_cached_value", fake_get)
+    monkeypatch.setattr(application, "set_cached_value", fake_set)
+    monkeypatch.setattr(application, "fetch_news", fake_fetch)
+    monkeypatch.setattr(
+        application,
+        "summarize_news_batch",
+        lambda items: [
+            {"tldr": "Cached brief", "bullets": [], "tags": [], "mode": "heuristic"}
+            for _ in items
+        ],
+    )
+
+    first = application.load_news("Electrical", 2)
+    second = application.load_news("Electrical", 5)
+
+    assert len(calls) == 1
+    assert len(first["articles"]) == 2
+    assert len(second["articles"]) == 4
+    assert second["cached"] is True
+
+
+def test_cached_query_search_uses_full_feed(monkeypatch):
+    cached = {
+        "branch": "Civil",
+        "ai_mode": "heuristic",
+        "articles": [
+            {"title": "Bridge inspection rules", "description": "Structures", "tags": []},
+            {"title": "Urban transit plan", "description": "Cities", "tags": []},
+            {"title": "Concrete mix study", "description": "Materials", "tags": []},
+        ],
+    }
+    key = application.cache_key("news-feed", "Civil")
+    monkeypatch.setattr(
+        application,
+        "get_cached_value",
+        lambda cache_key, **kwargs: cached if cache_key == key else None,
+    )
+
+    payload = application.load_news("Civil", 1, query="concrete")
+
+    assert payload["count"] == 1
+    assert payload["articles"][0]["title"] == "Concrete mix study"
+
+
+def test_throttled_news_prefers_recent_cached_feed(monkeypatch):
+    stale = {
+        "branch": "Mechanical",
+        "ai_mode": "heuristic",
+        "updated_at": "2026-11-27T00:00:00+00:00",
+        "articles": [
+            {
+                "title": "Last known good story",
+                "link": "https://example.com/last-good",
+                "description": "A cached article from before the provider throttled us.",
+                "tldr": "Cached brief",
+                "tags": [],
+            }
+        ],
+        "source_status": {"google": "ok"},
+    }
+
+    def fake_get(key, **kwargs):
+        if kwargs.get("allow_stale"):
+            return stale
+        return None
+
+    def fake_fetch(branch, limit):
+        return {
+            "articles": [
+                {"title": "Curated fallback", "fallback": True, "description": "Fallback"}
+            ],
+            "throttled": True,
+            "source_status": {"google": "throttled"},
+        }
+
+    monkeypatch.setattr(application, "get_cached_value", fake_get)
+    monkeypatch.setattr(application, "set_cached_value", lambda key, value, **kwargs: True)
+    monkeypatch.setattr(application, "fetch_news", fake_fetch)
+
+    payload = application.load_news("Mechanical", 3)
+
+    assert payload["stale"] is True
+    assert payload["articles"][0]["title"] == "Last known good story"
+    assert "throttled" in payload["notice"]

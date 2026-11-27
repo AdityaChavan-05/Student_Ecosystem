@@ -35,6 +35,13 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
 def _default_database_path() -> str:
     """Return a writable SQLite path."""
     configured = os.getenv("DATABASE_PATH", "").strip()
@@ -145,12 +152,20 @@ class Config:
 
     # Caching -------------------------------------------------------------
     NEWS_CACHE_MINUTES = _env_int("NEWS_CACHE_MINUTES", 30)
+    # A throttled feed may serve a slightly older cached copy, but never one
+    # older than this limit (default: 24 hours).
+    NEWS_STALE_MAX_MINUTES = _env_int("NEWS_STALE_MAX_MINUTES", 24 * 60)
     COLLEGE_CACHE_MINUTES = _env_int("COLLEGE_CACHE_MINUTES", 20)
     AI_CACHE_MINUTES = _env_int("AI_CACHE_MINUTES", 60 * 24 * 7)
     BRIEFING_CACHE_MINUTES = _env_int("BRIEFING_CACHE_MINUTES", 60 * 6)
 
     # Feeds ---------------------------------------------------------------
     REQUEST_TIMEOUT = _env_int("REQUEST_TIMEOUT", 12)
+    # One bounded retry is enough for transient 429/5xx responses. Serverless
+    # environments should not spend their execution budget in long retry loops.
+    NEWS_FETCH_ATTEMPTS = max(1, _env_int("NEWS_FETCH_ATTEMPTS", 2))
+    NEWS_RETRY_BASE_SECONDS = max(0.0, _env_float("NEWS_RETRY_BASE_SECONDS", 0.4))
+    NEWS_RETRY_MAX_SECONDS = max(0.0, _env_float("NEWS_RETRY_MAX_SECONDS", 1.5))
     DEFAULT_NEWS_LIMIT = 9
     MAX_NEWS_LIMIT = 24
 

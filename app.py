@@ -16,6 +16,7 @@ import logging
 import os
 import re
 import secrets
+import threading
 from datetime import date, datetime, timezone
 from email import policy
 from email.parser import BytesParser
@@ -89,7 +90,7 @@ from database import (
     update_settings,
     update_task,
 )
-from news_fetcher import BRANCH_FILTERS, get_news
+from news_fetcher import BRANCH_FILTERS, fetch_news
 from seed_data import seed_opportunities
 from social_fetcher import get_social_updates, social_status
 
@@ -99,6 +100,10 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 logger = logging.getLogger("student-ecosystem")
+
+# One upstream fetch at a time per process. Different tabs/limits share the
+# same canonical feed, so we never fetch the same RSS query twice needlessly.
+_NEWS_FETCH_LOCK = threading.Lock()
 
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = BASE_DIR / "templates"
@@ -569,72 +574,167 @@ def normalise_tags(value) -> list[str]:
     return tags[:8]
 
 
+def _filter_news_by_query(articles: list[dict], query: str) -> list[dict]:
+    """Case-insensitive query filter over the searchable article fields."""
+    if not query:
+        return list(articles)
+    lowered = query.lower()
+    filtered = []
+    for item in articles:
+        tags = item.get("tags") or []
+        if isinstance(tags, str):
+            tags = [tags]
+        text = (
+            f"{item.get('title', '')} {item.get('description', '')} "
+            f"{item.get('summary', '')} {' '.join(str(tag) for tag in tags)}"
+        ).lower()
+        if lowered in text:
+            filtered.append(item)
+    return filtered
+
+
+def _news_payload(
+    cached: dict,
+    limit: int,
+    query: str,
+    *,
+    stale: bool = False,
+    notice: str = "",
+) -> dict:
+    """Build the API payload from one canonical, unfiltered cached feed."""
+    articles = _filter_news_by_query(
+        list(cached.get("articles") or []), query
+    )[:limit]
+    payload = {
+        "branch": cached.get("branch") or "Computer Science",
+        "ai_mode": cached.get("ai_mode") or ("ai" if ai_available() else "heuristic"),
+        "updated_at": cached.get("updated_at") or iso_now(),
+        "cached": True,
+        "stale": stale,
+        "count": len(articles),
+        "articles": articles,
+        "query": query,
+        "source_status": cached.get("source_status") or {},
+    }
+    if notice:
+        payload["notice"] = notice
+    return payload
+
+
 def load_news(branch: str, limit: int, force_refresh: bool = False, query: str = "") -> dict:
-    """Fetch + summarise branch news, with caching and graceful degradation."""
-    key = cache_key("news", branch, limit)
+    """Fetch + summarise branch news with one shared cache and safe fallbacks.
+
+    The cache key is independent of ``limit`` and ``q``: every tab, teaser and
+    briefing reuses the same upstream RSS fetch. A throttled provider can fall
+    back to a recently expired feed instead of an invented or sparse result.
+    """
+    key = cache_key("news-feed", branch)
     if not force_refresh:
         cached = get_cached_value(key)
         if isinstance(cached, dict):
-            cached["cached"] = True
-            cached["query"] = query
-            if query:
-                lowered = query.lower()
-                cached["articles"] = [
-                    item
-                    for item in cached.get("articles", [])
-                    if lowered in (item.get("title", "") + " " + item.get("description", "")).lower()
-                    or lowered in " ".join(item.get("tags", [])).lower()
-                ]
-            cached["count"] = len(cached.get("articles", []))
-            return cached
+            return _news_payload(cached, limit, query)
 
-    articles = get_news(branch, limit=limit)
-    summaries = summarize_news_batch(articles)
+    with _NEWS_FETCH_LOCK:
+        # Another tab may have refreshed the feed while we waited for the lock.
+        if not force_refresh:
+            cached = get_cached_value(key)
+            if isinstance(cached, dict):
+                return _news_payload(cached, limit, query)
 
-    results = []
-    for article, summary in zip(articles, summaries):
-        results.append(
-            {
-                "id": hash_id("news_", article.get("link") or article.get("title", "")),
-                "title": article.get("title", ""),
-                "link": article.get("link", ""),
-                "source": article.get("source", "Engineering publisher"),
-                "description": article.get("description", ""),
-                "summary": summary.get("tldr", ""),
-                "tldr": summary.get("tldr", ""),
-                "bullets": summary.get("bullets", []),
-                "tags": summary.get("tags") or article.get("tags", []),
-                "summary_mode": summary.get("mode", "heuristic"),
-                "published_at": article.get("published_at"),
-                "fallback": bool(article.get("fallback")),
-                "branch": branch,
-            }
+        stale = get_cached_value(
+            key,
+            allow_stale=True,
+            stale_max_minutes=Config.NEWS_STALE_MAX_MINUTES,
         )
+        try:
+            fetched = fetch_news(branch, limit=Config.MAX_NEWS_LIMIT)
+        except Exception:
+            logger.exception("News feed request failed.")
+            fetched = {"articles": [], "throttled": False, "source_status": {}}
 
-    unfiltered = list(results)
-    if query:
-        lowered = query.lower()
-        results = [
-            item
-            for item in results
-            if lowered in (item.get("title", "") + " " + item.get("description", "")).lower()
-            or lowered in " ".join(item.get("tags", [])).lower()
-        ]
+        fetched_articles = fetched.get("articles") or []
+        throttled = bool(fetched.get("throttled"))
+        live_articles = [item for item in fetched_articles if not item.get("fallback")]
 
-    common = {
-        "branch": branch,
-        "ai_mode": "ai" if ai_available() else "heuristic",
-        "updated_at": iso_now(),
-        "cached": False,
-    }
-    payload = {**common, "count": len(results), "articles": results, "query": query}
-    # Store the unfiltered feed so different searches share one upstream fetch.
-    set_cached_value(
-        key,
-        {**common, "count": len(unfiltered), "articles": unfiltered, "query": ""},
-        ttl_minutes=Config.NEWS_CACHE_MINUTES,
-    )
-    return payload
+        if isinstance(stale, dict) and (not fetched_articles or (throttled and not live_articles)):
+            reason = "throttled" if throttled else "temporarily unavailable"
+            return _news_payload(
+                stale,
+                limit,
+                query,
+                stale=True,
+                notice=f"News sources are {reason}; showing the last cached feed.",
+            )
+
+        if not fetched_articles:
+            return {
+                "branch": branch,
+                "ai_mode": "ai" if ai_available() else "heuristic",
+                "updated_at": iso_now(),
+                "cached": False,
+                "stale": False,
+                "count": 0,
+                "articles": [],
+                "query": query,
+                "source_status": fetched.get("source_status") or {},
+                "notice": "News sources are temporarily unavailable. Please try again later.",
+            }
+
+        try:
+            summaries = summarize_news_batch(fetched_articles)
+        except Exception:
+            logger.exception("News summarisation failed; using feed text only.")
+            summaries = [
+                {"tldr": item.get("description", "")[:280], "bullets": [], "tags": [], "mode": "heuristic"}
+                for item in fetched_articles
+            ]
+
+        results = []
+        for article, summary in zip(fetched_articles, summaries):
+            results.append(
+                {
+                    "id": hash_id("news_", article.get("link") or article.get("title", "")),
+                    "title": article.get("title", ""),
+                    "link": article.get("link", ""),
+                    "source": article.get("source", "Engineering publisher"),
+                    "description": article.get("description", ""),
+                    "summary": summary.get("tldr", ""),
+                    "tldr": summary.get("tldr", ""),
+                    "bullets": summary.get("bullets", []),
+                    "tags": summary.get("tags") or article.get("tags", []),
+                    "summary_mode": summary.get("mode", "heuristic"),
+                    "published_at": article.get("published_at"),
+                    "fallback": bool(article.get("fallback")),
+                    "branch": branch,
+                }
+            )
+
+        common = {
+            "branch": branch,
+            "ai_mode": "ai" if ai_available() else "heuristic",
+            "updated_at": iso_now(),
+            "cached": False,
+            "stale": False,
+            "source_status": fetched.get("source_status") or {},
+        }
+        visible = _filter_news_by_query(results, query)[:limit]
+        payload = {
+            **common,
+            "count": len(visible),
+            "articles": visible,
+            "query": query,
+        }
+        if throttled:
+            payload["notice"] = "Some news sources are throttled; showing available stories."
+
+        # Store the full unfiltered feed so different searches and page sizes
+        # share one upstream fetch and its cached AI summaries.
+        set_cached_value(
+            key,
+            {**common, "count": len(results), "articles": results, "query": ""},
+            ttl_minutes=Config.NEWS_CACHE_MINUTES,
+        )
+        return payload
 
 
 def filter_news_by_preferences(articles: list[dict], preferences: list[str]) -> list[dict]:
@@ -819,12 +919,13 @@ def build_briefing(force: bool = False) -> dict:
     campus = (upcoming or campus_updates)[:3]
     opportunities = decorate_opportunities(list_opportunities(deadline_window="open"))[:3]
     branch = profile.get("branch", "Computer Science")
-    if force:
-        try:
-            load_news(branch, 9, force_refresh=True)
-        except Exception:
-            logger.info("Forced news refresh failed while building briefing.")
-    news_cached = get_cached_value(cache_key("news", branch, 9))
+    # Reuse the shared news cache. A briefing refresh must not trigger a second
+    # upstream RSS fetch after the user already refreshed the news view.
+    try:
+        load_news(branch, 9)
+    except Exception:
+        logger.info("News feed unavailable while building briefing.")
+    news_cached = get_cached_value(cache_key("news-feed", branch))
     news = (news_cached or {}).get("articles", [])[:2] if isinstance(news_cached, dict) else []
 
     context = {

@@ -227,16 +227,46 @@ def init_db() -> None:
 # Cache
 # ---------------------------------------------------------------------------
 
-def get_cached_value(cache_key: str):
+def get_cached_value(
+    cache_key: str,
+    *,
+    allow_stale: bool = False,
+    stale_max_minutes: int | None = None,
+):
+    """Read a cache entry.
+
+    By default only unexpired values are returned. ``allow_stale`` lets a feed
+    fall back to a recently expired entry when an upstream provider throttles
+    the request; ``stale_max_minutes`` caps how old that fallback may be.
+    """
     if not cache_key:
         return None
     init_db()
     try:
+        now = utcnow()
         with get_connection() as connection:
-            row = connection.execute(
-                "SELECT value FROM app_cache WHERE cache_key = ? AND expires_at > ?",
-                (str(cache_key), utcnow()),
-            ).fetchone()
+            if allow_stale:
+                if stale_max_minutes is None:
+                    row = connection.execute(
+                        "SELECT value FROM app_cache WHERE cache_key = ? "
+                        "ORDER BY expires_at DESC LIMIT 1",
+                        (str(cache_key),),
+                    ).fetchone()
+                else:
+                    cutoff = (
+                        datetime.now(timezone.utc)
+                        - timedelta(minutes=max(0, int(stale_max_minutes)))
+                    ).isoformat(timespec="seconds")
+                    row = connection.execute(
+                        "SELECT value FROM app_cache WHERE cache_key = ? "
+                        "AND expires_at >= ? ORDER BY expires_at DESC LIMIT 1",
+                        (str(cache_key), cutoff),
+                    ).fetchone()
+            else:
+                row = connection.execute(
+                    "SELECT value FROM app_cache WHERE cache_key = ? AND expires_at > ?",
+                    (str(cache_key), now),
+                ).fetchone()
         if not row:
             return None
         return _json(row["value"], None)

@@ -87,7 +87,10 @@ All settings live in `.env` (see `.env.example`) and are read by `config.py`.
 | `COLLEGE_WEBSITE_URL` | `https://mitwpu.edu.in/` | Campus source. |
 | `COLLEGE_NAME` / `COLLEGE_SHORT_NAME` / `COLLEGE_CITY` | MIT-WPU values | Display metadata. |
 | `REQUEST_TIMEOUT` | `12` | Outbound HTTP timeout for feeds and scraping. |
-| `NEWS_CACHE_MINUTES` | `30` | News cache TTL. |
+| `NEWS_CACHE_MINUTES` | `30` | Shared news feed cache TTL. |
+| `NEWS_STALE_MAX_MINUTES` | `1440` | Maximum age of a cached feed used when RSS providers throttle. |
+| `NEWS_FETCH_ATTEMPTS` | `2` | Total attempts for a transient RSS failure (one bounded retry). |
+| `NEWS_RETRY_BASE_SECONDS` / `NEWS_RETRY_MAX_SECONDS` | `0.4` / `1.5` | Exponential backoff bounds, with jitter. A longer `Retry-After` is respected by not retrying. |
 | `COLLEGE_CACHE_MINUTES` | `20` | Campus cache TTL. |
 | `BRIEFING_CACHE_MINUTES` | `360` | Daily briefing cache TTL. |
 | `AI_CACHE_MINUTES` | `10080` | AI result cache TTL (7 days). |
@@ -104,7 +107,7 @@ Every external dependency has a graceful degradation path:
 
 1. **Campus feed** — MIT-WPU pages are fetched in parallel with a timeout and parsed with BeautifulSoup. If every page fails, a curated 12-item campus guide (with relative deadlines) is returned and clearly labelled "Curated campus guide" in the UI.
 2. **Opportunities** — seeded curated listings with deadlines rolled forward automatically so the radar never goes stale or empty.
-3. **News** — Google News RSS + Bing News RSS + publication feeds are fetched together, deduplicated, branch-filtered and ranked by recency plus real summary text. Publication feeds are fetched in parallel so briefs have substance; when a feed only carries a headline, the card says so. A curated reading list fills any remaining gap.
+3. **News** — Google News RSS + Bing News RSS + publication feeds are deduplicated, branch-filtered and ranked by recency plus real summary text. Publication feeds are fetched in parallel so briefs have substance; when a feed only carries a headline, the card says so. One shared cache serves every page size and search, so tabs and briefings do not refetch the same query. A transient 429/5xx gets one short, jittered retry; if a provider is still throttled, the app reuses a recent cached feed (clearly marked "stale") instead of fabricating stories, and a curated reading list fills any remaining gap.
 4. **AI** — Gemini with model-level fallbacks; on any failure the deterministic summarizer (sentence scoring, date extraction, action-verb detection, category/urgency/tag inference) takes over. Summaries are cached in SQLite.
 5. **Storage** — local SQLite with WAL mode; no Supabase or cloud account needed.
 6. **Uploads** — `.eml` is parsed with the standard library (subject/from/plain-text body extracted), `.txt`/`.md` are read directly, PDFs via `pypdf` when available. Files are processed in memory; nothing is written to disk.
